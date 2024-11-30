@@ -1,0 +1,246 @@
+name: multibypass-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - "core/zapret"
+
+env:
+  repo_name: "${{ github.event.repository.name }}"
+  core_dir: "core"
+  x3m_dir: "core/x3mRouting"
+  zapret_dir: "core/zapret"
+
+jobs:
+  build-linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.generate_tag.outputs.tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            tool: aarch64-unknown-linux-musl
+          - arch: arm
+            tool: arm-unknown-linux-musleabi
+          - arch: armv7hf
+            tool: armv7-unknown-linux-musleabihf
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Generate tag name
+        id: generate_tag
+        run: |
+          TAG=v$(date +'%Y.%m.%d-%H%M')
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Get zapret submodule version
+        run: |
+          cd ${{ env.zapret_dir }}
+          zapret_version=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse HEAD)
+          echo "zapret_version=$zapret_version" >> $GITHUB_ENV
+
+      - name: Set up build tools
+        env:
+          REPO: "spvkgn/musl-cross"
+          TOOL: ${{ matrix.tool }}
+        run: |
+          sudo apt update -qq && sudo apt install -y libcap-dev
+          mkdir -p $HOME/tools
+          wget -qO- https://github.com/$REPO/releases/download/latest/$TOOL.tar.xz | tar -C $HOME/tools -xJ || exit 1
+          [ -d "$HOME/tools/$TOOL/bin" ] && echo "$HOME/tools/$TOOL/bin" >> $GITHUB_PATH
+
+      - name: Build
+        env:
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.tool }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DEPS_DIR=$GITHUB_WORKSPACE/deps
+          export CC="$TARGET-gcc"
+          export LD=$TARGET-ld
+          export AR=$TARGET-ar
+          export NM=$TARGET-nm
+          export STRIP=$TARGET-strip
+          export PKG_CONFIG_PATH=$DEPS_DIR/lib/pkgconfig
+          export CFLAGS="$CFLAGS $([ "$ARCH" = "armv7hf" ] && echo "-march=armv7-a -mfpu=neon-vfpv4 -mtune=cortex-a7")"
+
+          # netfilter libs
+          wget -qO- https://www.netfilter.org/pub/libnfnetlink/libnfnetlink-1.0.2.tar.bz2 | tar -xj
+          wget -qO- https://www.netfilter.org/pub/libmnl/libmnl-1.0.5.tar.bz2 | tar -xj
+          wget -qO- https://www.netfilter.org/pub/libnetfilter_queue/libnetfilter_queue-1.0.5.tar.bz2 | tar -xj
+
+          for i in libmnl libnfnetlink libnetfilter_queue ; do
+            (
+              cd $i-*
+              CFLAGS="-Os -flto=auto" \
+              ./configure --prefix= --host=$TARGET --enable-static --disable-shared --disable-dependency-tracking
+              make install -j$(nproc) DESTDIR=$DEPS_DIR
+            )
+            sed -i "s|^prefix=.*|prefix=$DEPS_DIR|g" $DEPS_DIR/lib/pkgconfig/$i.pc
+          done
+
+          # zlib
+          gh api repos/madler/zlib/releases/latest --jq ".tag_name" |\
+            xargs -I{} wget -qO- https://github.com/madler/zlib/archive/refs/tags/{}.tar.gz | tar -xz
+          (
+            cd zlib-*
+            CFLAGS="-Os -flto=auto" \
+            ./configure --prefix= --static
+            make install -j$(nproc) DESTDIR=$DEPS_DIR
+          )
+
+          # headers
+          install -Dm644 -t $DEPS_DIR/include/sys /usr/include/x86_64-linux-gnu/sys/queue.h /usr/include/sys/capability.h
+
+          # zapret
+          CFLAGS="$CFLAGS -DZAPRET_GH_VER=${{ env.repo_name }}-${{ env.TAG }} -DZAPRET_GH_HASH=${{ github.sha }} -static-libgcc -static -I$DEPS_DIR/include" \
+          LDFLAGS="-L$DEPS_DIR/lib" \
+          make -C ${{ env.zapret_dir }} -j$(nproc)
+          tar -C ${{ env.zapret_dir }}/binaries/my -cJf zapret-linux-$ARCH.tar.xz .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zapret-linux-${{ matrix.arch }}
+          path: zapret-linux-*.tar.xz
+          if-no-files-found: error
+
+  release:
+    needs: build-linux
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.build-linux.outputs.tag }}
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Create Git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ env.TAG }}
+          git push origin ${{ env.TAG }}
+
+      - name: Get zapret commit hash
+        id: zapret_commit
+        run: |
+          cd $GITHUB_WORKSPACE/core/zapret
+          zapret_commit=$(git rev-parse HEAD)
+          echo "zapret_commit=$zapret_commit" >> $GITHUB_ENV
+
+      - name: Get x3mRouting commit hash
+        id: x3mrouting_commit
+        run: |
+          cd $GITHUB_WORKSPACE/core/x3mRouting
+          x3mrouting_commit=$(git rev-parse HEAD)
+          echo "x3mrouting_commit=$x3mrouting_commit" >> $GITHUB_ENV
+
+      - name: Cleanup files
+        shell: bash
+        run: |
+          mv "${{ env.zapret_dir }}"/ipset/zapret-hosts-user-exclude.txt.default zapret-hosts-user-exclude.txt
+          mv "${{ env.x3m_dir }}/x3mRouting.sh" "${{ env.core_dir }}" && rm -rf "${{ env.x3m_dir }}"
+
+          find . \
+            \( -name "README.md" \
+            -o -name "LICENSE" \
+            -o -name ".git*" \
+            -o -name "tpws" \
+            -o -name "nfq" \
+            -o -name "ip2net" \
+            -o -name "mdig" \
+            -o -name "docs" \
+            -o -name "tmp" \
+            -o -name "custom.d" \
+            -o -name "config.default" \
+            -o -name "install_bin.sh" \
+            -o -name "install_easy.sh" \
+            -o -name "install_prereq.sh" \
+            -o -name "Makefile" \
+            -o -name "uninstall_easy.sh" \
+            -o -name "custom.d.examples" \
+            \) -exec rm -rf {} +
+
+          for item in \
+            "files fake" \
+            "init.d sysv"; do
+            set -- $item # Parse into $1 and $2
+            find "${{ env.zapret_dir }}/$1" -mindepth 1 -maxdepth 1 ! -name "$2" -exec rm -rf {} +
+          done
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        id: bins
+        with:
+          path: ${{ env.zapret_dir }}/binaries
+          pattern: zapret-linux-*
+
+      - name: Install upx
+        uses: crazy-max/ghaction-upx@v3
+        with:
+          install-only: true
+
+      - name: Compress binaries
+        shell: bash
+        run: |
+          cd "${{ steps.bins.outputs.download-path }}"
+
+          run_dir() {
+            for archive in "$dir"/*.tar.xz; do
+              [ -f "$archive" ] && tar -C "$dir" -xvJf "$archive" && rm "$archive"
+            done
+            upx --best --lzma "$dir"/* || true
+            mv "$dir" "$1"
+          }
+
+          for dir in *-linux-*; do
+            [ -d "$dir" ] || continue
+            echo "Processing $dir"
+            ls -l "$dir"
+            case $dir in
+              *-linux-arm )     run_dir arm ;;
+              *-linux-arm64 )   run_dir aarch64 ;;
+              *-linux-armv7hf ) run_dir armv7hf ;;
+            esac
+          done
+          ls -lhR
+
+      - name: Package ${{ env.repo_name }}
+        shell: bash
+        run: |
+          cd ../
+          find ${{ env.repo_name }}/${{ env.zapret_dir }}/binaries -type f -exec sha256sum {} \; >sha256sum.txt
+          tar --owner=0 --group=0 -czf "${{ env.repo_name }}.tar.gz" "${{ env.repo_name }}"
+          zip -qr "${{ env.repo_name }}.zip" "${{ env.repo_name }}"
+          ls -lhR
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          prerelease: false
+          draft: false
+          name: Build ${{ env.TAG }}
+          tag_name: ${{ env.TAG }}
+          body: |
+            ### Auto build with latest [zapret](https://github.com/bol-van/zapret/tree/${{ env.zapret_commit }}) and [x3mRouting.sh](https://github.com/Xentrk/x3mRouting/tree/${{ env.x3mrouting_commit }})
+          files: |
+            ../${{ env.repo_name }}.zip
+            ../${{ env.repo_name }}.tar.gz
+            ../sha256sum.txt

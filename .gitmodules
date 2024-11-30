@@ -1,0 +1,8 @@
+[submodule "core/zapret"]
+	path = core/zapret
+	url = https://github.com/bol-van/zapret
+	branch = master
+[submodule "core/x3mRouting"]
+	path = core/x3mRouting
+	url = https://github.com/NOFEXtreme/x3mRouting
+	branch = master
