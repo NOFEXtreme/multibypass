@@ -14,9 +14,9 @@ if [ -n "$USE_SET" ]; then
   SET_NAME=wireguard
 fi
 
+# size = 156 (8 udp header + 148 payload) && payload starts with 0x01000000
 zapret_custom_firewall() { # $1 - 1 - run, 0 - stop
   local f
-  local first_packets_only="$ipt_connbytes 1:3"
   local PORTS_IPT=$(replace_char - : "$NFQWS_PORTS_UDP_WG")
 
   local DISABLE_IPV6=1
@@ -34,12 +34,12 @@ zapret_custom_firewall() { # $1 - 1 - run, 0 - stop
     }
   fi
 
-  f="-p udp -m multiport --dports $PORTS_IPT"
+  f="-p udp -m multiport --dports $PORTS_IPT -m u32 --u32"
 
   if [ -n "$USE_SET" ]; then
-    fw_nfqws_post "$1" "$f $first_packets_only $dest_set" "$f $first_packets_only $dest_set" 200
+    fw_nfqws_post "$1" "$f 0>>22&0x3C@4>>16=0x9c&&0>>22&0x3C@8=0x01000000 $dest_set" "$f 44>>16=0x9c&&48=0x01000000 $dest_set" 200
   else
-    fw_nfqws_post "$1" "$f $first_packets_only" "$f $first_packets_only" 200
+    fw_nfqws_post "$1" "$f 0>>22&0x3C@4>>16=0x9c&&0>>22&0x3C@8=0x01000000" "$f 44>>16=0x9c&&48=0x01000000" 200
   fi
 
   [ "$1" = 1 ] || ipset destroy $SET_NAME 2>/dev/null
@@ -47,7 +47,6 @@ zapret_custom_firewall() { # $1 - 1 - run, 0 - stop
 
 zapret_custom_firewall_nft() { # stop logic is not required
   local f
-  local first_packets_only="$nft_connbytes 1-3"
 
   local DISABLE_IPV6=1
 
@@ -61,11 +60,11 @@ zapret_custom_firewall_nft() { # stop logic is not required
     nft_add_set_element $SET_NAME "$subnets"
   fi
 
-  f="udp dport {$NFQWS_PORTS_UDP_DISCORD}"
+  f="udp dport {$NFQWS_PORTS_UDP_WG} length 156 @th,64,32 0x01000000"
   if [ -n "$USE_SET" ]; then
-    nft_fw_nfqws_post "$f $first_packets_only $dest_set" "$f $first_packets_only $dest_set" 200
+    nft_fw_nfqws_post "$f $dest_set" "$f $dest_set" 200
   else
-    nft_fw_nfqws_post "$f $first_packets_only" "$f $first_packets_only" 200
+    nft_fw_nfqws_post "$f" "$f" 200
   fi
 }
 
