@@ -435,7 +435,7 @@ zapret() {
   if [ "$action" = "enable" ]; then
     log_debug "Disabling 'zapret' daemons." && sh "$ZAPRET" stop
     log_debug "Enabling 'zapret' daemons." && sh "$ZAPRET" start
-    add_entry_to_file "$NAT_START" "sleep 60 && $ZAPRET stop && $ZAPRET start"
+    add_entry_to_file "$NAT_START" "$ZAPRET stop && $ZAPRET start"
     add_entry_to_file "$SERVICES_STOP" "$ZAPRET stop"
   fi
 
