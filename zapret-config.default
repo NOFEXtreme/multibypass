@@ -98,7 +98,7 @@ NFQWS_UDP_PKT_IN=0
 # hostlist markers are replaced to empty string if MODE_FILTER does not satisfy
 # <HOSTLIST_NOAUTO> appends ipset/zapret-hosts-auto.txt as normal list
 NFQWS_OPT="
---filter-tcp=$NFQWS_PORTS_TCP --dpi-desync=fake,fakedsplit --dpi-desync-split-pos=midsld --dpi-desync-fooling=md5sig,badsum --dpi-desync-fake-tls=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin <HOSTLIST> --new
+--filter-tcp=$NFQWS_PORTS_TCP --dpi-desync=fake,fakeddisorder --dpi-desync-split-pos=midsld --dpi-desync-fooling=md5sig,badsum --dpi-desync-fake-tls=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin <HOSTLIST> --new
 --filter-udp=$NFQWS_PORTS_UDP --dpi-desync=fake --dpi-desync-repeats=3 --dpi-desync-fake-quic=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin <HOSTLIST_NOAUTO>
 ${NFQWS_PORTS_UDP_WG:+"--new --filter-udp=$NFQWS_PORTS_UDP_WG --filter-l7=wireguard --dpi-desync=fake --dpi-desync-fake-wireguard=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin"}
 ${NFQWS_PORTS_UDP_DISCORD:+"--new --filter-udp=$NFQWS_PORTS_UDP_DISCORD --dpi-desync=fake --dpi-desync-any-protocol"}
