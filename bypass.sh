@@ -113,7 +113,7 @@ add_entry_to_file() {
   fi
 }
 
-check_if_empty() {
+delete_if_empty() {
   file="$1"
 
   if [ -f "$file" ]; then # If file exists, count non-empty lines, excluding the shebang.
@@ -123,15 +123,7 @@ check_if_empty() {
   fi
 
   if [ "$non_empty_lines" -eq 0 ]; then
-    while true; do
-      printf "NOTICE! '%s' is empty. Delete it? [Y/n]:" "$file"
-      read -r "OPTION"
-      case "$OPTION" in
-        [yY][eE][sS] | [yY] | '') rm "$file" && log_debug "File '$file' deleted." && break ;;
-        [nN][oO] | [nN]) break ;;
-        *) echo "Invalid option. File not deleted." ;;
-      esac
-    done
+    rm "$file" && log_debug "Empty file '$file' deleted."
   fi
 }
 
@@ -143,7 +135,7 @@ delete_entry_from_file() {
     if grep -qw "$pattern" "$file"; then
       sed -i "\|\b$pattern\b|d" "$file" && log_debug "Entry matching '$pattern' deleted from $file"
     fi
-    check_if_empty "$file"
+    delete_if_empty "$file"
   fi
 }
 
