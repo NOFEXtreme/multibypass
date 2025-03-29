@@ -86,7 +86,7 @@ log_debug() {
   printf "\033[1;32m%s\033[0m\n" "$1"
 }
 
-log_warning() {
+log_warn() {
   printf "\033[1;33mWarning:\033[0m %s\n" "$1"
 }
 
@@ -143,7 +143,7 @@ create_link() {
   src="$1"
   dest="$2"
 
-  [ ! -e "$src" ] && log_warning "File '$src' not found." && return 1
+  [ ! -e "$src" ] && log_warn "File '$src' not found." && return 1
   [ "$(readlink "$dest" 2>/dev/null)" = "$src" ] && return 1
   ln -fs "$src" "$dest"
   log_debug "Linked '$src' => '$dest'"
@@ -213,7 +213,7 @@ easy_install() {
   for arch in aarch64 armv7hf arm; do
     arch_dir="$ZAPRET_DIR/binaries/$arch"
     [ ! -d "$arch_dir" ] && {
-      log_warning "Directory '$arch' missing. Try to run 'update' if no compatible binaries found."
+      log_warn "Directory '$arch' missing. Try to run 'update' if no compatible binaries found."
       continue
     }
 
@@ -244,6 +244,8 @@ easy_install() {
 easy_update() {
   url="https://github.com/NOFEXtreme/multibypass/releases/latest/download/multibypass.tar.gz"
   archive="/jffs/scripts/multibypass.tar.gz"
+  temp_dir="/tmp/multibypass_update"
+  protected_dirs="core/zapret-custom.d" # Space-separated directories protected from overwrite
 
   log_info "Downloading latest version from GitHub."
   if curl --retry 3 --connect-timeout 3 -sSfL -o "$archive" "$url"; then
@@ -251,23 +253,46 @@ easy_update() {
     zapret disable
     x3mRouting "" disable
 
-    log_debug "Successfully downloaded. Extracting now."
-    if tar -xzvf "$archive" -C /jffs/scripts/; then
-      log_debug "Extraction successful. Removing archive."
-      rm -rf "$archive"
+    log_debug "Preparing temporary extraction directory."
+    rm -rf "$temp_dir"
+    mkdir -p "$temp_dir"
+
+    if tar -xzf "$archive" -C "$temp_dir"; then
+      for dir in $protected_dirs; do
+        src_dir="$temp_dir/multibypass/$dir"
+        dest_dir="$SCR_DIR/$dir"
+
+        [ -d "$dest_dir" ] || continue
+
+        if find "$src_dir" -type f | grep -q .; then
+          modified_file=$(find "$src_dir" -type f | while read -r new_file; do
+            old_file="${new_file#"$src_dir"}"
+            [ -f "$dest_dir$old_file" ] || continue
+            cmp -s "$new_file" "$dest_dir$old_file" || { echo "$old_file"; break; }
+          done)
+          [ "$modified_file" ] && {
+            log_warn "Dir '$dest_dir' has modified file: '$modified_file'. Skipping overwrite." && rm -rf "$src_dir"
+          }
+        fi
+      done
+
+      log_debug "Applying update."
+      (cd "$temp_dir/multibypass" && cp -R . "$SCR_DIR/")
+      rm -rf "$archive" "$temp_dir"
+
+      chmod +x "$0"
+      exec "$0" install
     else
       log_error "Extraction failed. Update stopped."
+      rm -rf "$temp_dir"
     fi
-
-    chmod +x "$0"
-    exec "$0" install
   else
     log_error "Failed to download. Update stopped."
   fi
 }
 
 easy_uninstall() {
-  log_warning "Are you sure you want to delete Multibypass? [y/N]"
+  log_warn "Are you sure you want to delete Multibypass? [y/N]"
   read -r option
   case "${option:-n}" in
     [yY][eE][sS] | [yY])
@@ -442,12 +467,12 @@ case "$(echo "$1" | awk '{print tolower($0)}')" in
   s | status) status ;;
   ns | nslookup) ns_lookup ;;
   1 | e | enable | r | restart)
-    x3mRouting "" enable
     zapret enable
+    x3mRouting "" enable
     ;;
   0 | d | disable)
-    zapret disable
     x3mRouting "" disable
+    zapret disable
     ;;
   wg[1-5] | wg[1-5]e | wg[1-5]-enable | wg[1-5]r | wg[1-5]-restart | \
     ov[1-5] | ov[1-5]e | ov[1-5]-enable | ov[1-5]r | ov[1-5]-restart)
