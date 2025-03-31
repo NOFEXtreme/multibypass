@@ -169,7 +169,7 @@ easy_install() {
   log_info "Installing necessary components."
 
   # Install required packages for 'zapret' (maybe necessary: curl iptables ip6tables ipset)
-  for package in coreutils-id bind-dig ncat procps-ng-sysctl; do
+  for package in coreutils-id bind-dig ncat procps-ng-sysctl dos2unix; do
     if ! opkg list-installed | grep -q "^$package"; then
       opkg update && opkg install "$package"
       log_debug "Installed package: $package"
@@ -268,7 +268,10 @@ easy_update() {
           modified_file=$(find "$src_dir" -type f | while read -r new_file; do
             old_file="${new_file#"$src_dir"}"
             [ -f "$dest_dir$old_file" ] || continue
-            cmp -s "$new_file" "$dest_dir$old_file" || { echo "$old_file"; break; }
+            cmp -s "$new_file" "$dest_dir$old_file" || {
+              echo "$old_file"
+              break
+            }
           done)
           [ "$modified_file" ] && {
             log_warn "Dir '$dest_dir' has modified file: '$modified_file'. Skipping overwrite." && rm -rf "$src_dir"
@@ -388,45 +391,64 @@ x3mRouting() {
   for iface in $ifaces; do
     iface_number=$(echo "$iface" | grep -o '[0-9]*')
     [ "${iface%"$iface_number"}" = "ov" ] && iface_number=$((10 + iface_number))
-    ipset="x3m-domains-$iface"
-    file_path="$SCR_DIR/$ipset.txt"
+    for type in domains ips; do
+      ipset="x3m-$iface-$type"
+      file_path="$SCR_DIR/$ipset.txt"
 
-    if [ -n "$1" ] && [ ! -f "$file_path" ]; then
-      if [ "$action" = "disable" ]; then
-        log_info "Starting 'x3mRouting' script execution."
-        log_debug "Disabling '$iface' routing."
-        sh "$X3M" ipset_name="$ipset" del=force
-        log_info "End 'x3mRouting' script execution."
-      else
-        log_debug "File $file_path not found."
-        while true; do
-          echo "Do you want to create the file? [Y/n]:"
-          read -r option
-          case "${option:-y}" in
-            [yY][eE][sS] | [yY])
-              echo "nonexistent.domain" >>"$file_path" && chmod 644 "$file_path"
-              log_debug "File $file_path created. Please add domains to it." && exit 0
-              ;;
-            [nN][oO] | [nN]) log_debug "File not created. Exiting." && exit 1 ;;
-            *) echo "Invalid option. Please enter 'y' or 'n'." ;;
-          esac
-        done
+      if [ -n "$1" ] && [ ! -f "$file_path" ]; then
+        if [ "$action" = "disable" ]; then
+          log_info "Starting 'x3mRouting' script execution for disabling."
+          log_debug "Disabling '$iface $type' routing."
+          sh "$X3M" ipset_name="$ipset" del=force
+          log_info "End 'x3mRouting' script execution for '$ipset'."
+        else
+          x3m_handle_file_creation "$ipset" "$file_path"
+        fi
+      elif [ -n "$1" ] && [ ! -s "$file_path" ] && [ "$action" = "enable" ]; then
+        log_debug "File $file_path is empty. Add $type to it, if you want to use it." && return
+      elif [ -s "$file_path" ]; then
+        tr -d '\n' <"$file_path" | grep -q "$(printf '\r')" && dos2unix "$file_path"
+        x3m_handle_ipset_routing "$ipset" "$file_path" "$iface" "$type"
       fi
-    elif [ -n "$1" ] && [ ! -s "$file_path" ]; then
-      log_debug "File $file_path is empty. Please add domains to it, one per line." && exit 1
-    elif [ -s "$file_path" ]; then
-      log_info "Starting 'x3mRouting' script execution."
-      log_debug "Disabling '$iface' routing if exist."
-      sh "$X3M" ipset_name="$ipset" del=force
-
-      if [ "$action" = "enable" ]; then
-        log_debug "Enabling '$iface' routing."
-        sh "$X3M" 0 "$iface_number" "$ipset" dnsmasq_file="$file_path" proto="tcp:80,443 udp:443"
-        sh "$X3M" server=3 ipset_name="$ipset" proto="tcp:80,443 udp:443"
-      fi
-      log_info "End 'x3mRouting' script execution."
-    fi
+    done
   done
+}
+
+x3m_handle_file_creation() {
+  ipset="$1"
+  file_path="$2"
+
+  while true; do
+    echo "Do you want to create the file $file_path? [Y/n]:"
+    read -r option
+    case "${option:-y}" in
+      [yY][eE][sS] | [yY])
+        touch "$file_path" && chmod 644 "$file_path"
+        log_debug "File $file_path created. Add $type to it, if you want to use it." && return
+        ;;
+      [nN][oO] | [nN]) log_debug "File not created. Exiting." && return ;;
+      *) echo "Invalid option." && return ;;
+    esac
+  done
+}
+
+x3m_handle_ipset_routing() {
+  ipset="$1"
+  file_path="$2"
+  iface="$3"
+  type="$4"
+
+  log_info "Starting 'x3mRouting' script execution."
+  log_debug "Disabling '$ipset $type' routing if exist."
+  sh "$X3M" ipset_name="$ipset" del=force
+
+  if [ "$action" = "enable" ]; then
+    log_debug "Enabling '$iface' routing for $ipset."
+    param_type="$([ "$type" = "domains" ] && echo "dnsmasq_file" || echo "ip_file")"
+    sh "$X3M" 0 "$iface_number" "$ipset" "$param_type"="$file_path" proto="tcp:80,443 udp:443"
+    sh "$X3M" server=3 ipset_name="$ipset" proto="tcp:80,443 udp:443"
+  fi
+  log_info "End 'x3mRouting' script execution."
 }
 
 zapret() {
