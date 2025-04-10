@@ -1,4 +1,4 @@
-# This custom script runs desync of some udp packets on WireGuard protocol
+# This script creates iptables/nftables rules to send WireGuard handshake packets to nfqws
 # using ports specified in `$NFQWS_PORTS_UDP_WG` (defined in the zapret-config.sh).
 # Initializes `$SET_NAME` with `$SUBNETS`.
 

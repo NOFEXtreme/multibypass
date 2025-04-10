@@ -217,7 +217,7 @@ easy_install() {
       continue
     }
 
-    if [ -f "$arch_dir/ip2net" ] && echo 0.0.0.0 | $arch_dir/ip2net >/dev/null 2>&1; then
+    if [ -f "$arch_dir/ip2net" ] && echo 0.0.0.0 | "$arch_dir"/ip2net >/dev/null 2>&1; then
       log_debug "Using architecture: $arch" && bin_found=1
       find "$ZAPRET_DIR/binaries" -mindepth 1 -maxdepth 1 ! -name "$arch" -type d -exec rm -rf {} +
 
@@ -232,7 +232,7 @@ easy_install() {
   [ -n "$bin_found" ] && [ -z "$links_created" ] && log_debug "Binaries already linked."
   [ -z "$bin_found" ] && log_error "No compatible binaries found for $(uname -m)"
 
-  create_link "$SCR_DIR/core/zapret-custom.d" "$ZAPRET_DIR/init.d/sysv/custom.d"
+  create_link "$SCR_DIR/zapret-custom.d" "$ZAPRET_DIR/init.d/sysv/custom.d"
   process_file "$SCR_DIR/zapret-config.default" "$SCR_DIR/zapret-config.sh" "$ZAPRET_DIR/config"
   for file in zapret-hosts-user.txt zapret-hosts-auto.txt zapret-hosts-user-exclude.txt; do
     process_file "" "$SCR_DIR/$file" "$ZAPRET_DIR/ipset/$file"
@@ -245,7 +245,7 @@ easy_update() {
   url="https://github.com/NOFEXtreme/multibypass/releases/latest/download/multibypass.tar.gz"
   archive="/jffs/scripts/multibypass.tar.gz"
   temp_dir="/tmp/multibypass_update"
-  protected_dirs="core/zapret-custom.d" # Space-separated directories protected from overwrite
+  protected_dirs="zapret-custom.d" # Space-separated directories protected from overwrite
 
   log_info "Downloading latest version from GitHub."
   if curl --retry 3 --connect-timeout 3 -sSfL -o "$archive" "$url"; then
@@ -309,7 +309,7 @@ easy_uninstall() {
         case "${option:-y}" in
           [yY][eE][sS] | [yY])
             log_debug "Configuration files will be kept."
-            find $SCR_DIR -mindepth 1 ! \
+            find "$SCR_DIR" -mindepth 1 ! \
               \( -name "zapret-config.sh" \
               -o -name "x3m-domains-*" \
               -o -name "zapret-hosts-*" \
@@ -317,7 +317,7 @@ easy_uninstall() {
             log_debug "Multibypass deleted, configuration files kept."
             break
             ;;
-          [nN][oO] | [nN]) log_debug "Deleting multibypass." && rm -rf $SCR_DIR && break ;;
+          [nN][oO] | [nN]) log_debug "Deleting multibypass." && rm -rf "$SCR_DIR" && break ;;
           *) echo "Invalid input. Please enter 'yes' or 'no'." ;;
         esac
       done

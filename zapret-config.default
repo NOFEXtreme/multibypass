@@ -84,9 +84,9 @@ NFQWS_PORTS_UDP_DISCORD=50000-50099 # Comment out to disable discord custom scri
 # PKT_OUT means connbytes dir original
 # PKT_IN means connbytes dir reply
 # this is --dpi-desync-cutoff=nX kernel mode implementation for linux. it saves a lot of CPU.
-NFQWS_TCP_PKT_OUT=$((6+${AUTOHOSTLIST_RETRANS_THRESHOLD:-0}))
+NFQWS_TCP_PKT_OUT=$((3+${AUTOHOSTLIST_RETRANS_THRESHOLD:-0}))
 NFQWS_TCP_PKT_IN=${AUTOHOSTLIST_RETRANS_THRESHOLD:-0}
-NFQWS_UDP_PKT_OUT=$((6+${AUTOHOSTLIST_RETRANS_THRESHOLD:-0}))
+NFQWS_UDP_PKT_OUT=$((3+${AUTOHOSTLIST_RETRANS_THRESHOLD:-0}))
 NFQWS_UDP_PKT_IN=0
 # redirect outgoing traffic without connbytes limiter and incoming with connbytes limiter
 # normally it's needed only for stateless DPI that matches every packet in a single TCP session
@@ -101,8 +101,8 @@ NFQWS_OPT="
 --filter-tcp=$NFQWS_PORTS_TCP --dpi-desync=multidisorder --dpi-desync-split-pos=2,midsld-2,midsld,midsld+2,sniext+1 --hostlist-domains=c.youtube.com,googlevideo.com --new
 --filter-tcp=$NFQWS_PORTS_TCP --dpi-desync=fake,multidisorder --dpi-desync-split-pos=2,midsld-2,midsld,midsld+2,sniext+1 --dpi-desync-fooling=badsum,md5sig <HOSTLIST> --new
 --filter-udp=$NFQWS_PORTS_UDP --dpi-desync=fake --dpi-desync-repeats=3 --dpi-desync-fake-quic=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin <HOSTLIST_NOAUTO>
-${NFQWS_PORTS_UDP_WG:+"--new --filter-udp=$NFQWS_PORTS_UDP_WG --filter-l7=wireguard --dpi-desync=fake --dpi-desync-fake-wireguard=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin"}
-${NFQWS_PORTS_UDP_DISCORD:+"--new --filter-udp=$NFQWS_PORTS_UDP_DISCORD --dpi-desync=fake --dpi-desync-any-protocol"}
+${NFQWS_PORTS_UDP_WG:+"--new --filter-udp=$NFQWS_PORTS_UDP_WG --filter-l7=wireguard --dpi-desync=fake"}
+${NFQWS_PORTS_UDP_DISCORD:+"--new --filter-udp=$NFQWS_PORTS_UDP_DISCORD --filter-l7=discord,stun --dpi-desync=fake"}
 "
 
 # none,ipset,hostlist,autohostlist

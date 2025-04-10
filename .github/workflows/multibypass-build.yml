@@ -195,6 +195,7 @@ jobs:
         uses: crazy-max/ghaction-upx@v3
         with:
           install-only: true
+          version: v4.2.4
 
       - name: Compress binaries
         shell: bash
