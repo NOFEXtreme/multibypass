@@ -6,7 +6,7 @@
 # - AsusWrt Merlin: https://github.com/RMerl/asuswrt-merlin.ng
 # - AsusWrt Merlin GNUton's Builds: https://github.com/gnuton/asuswrt-merlin.ng
 #
-# VERSION=1.0
+# VERSION=1.1
 # Author: NOFEXtream
 #
 # Dependents:
@@ -46,7 +46,7 @@
 #       ovXd / ovX-disable - Disable ovX
 #       ovXr / ovX-restart - Restart ovX
 #
-#   * Replace (X) with the interface number (e.g., wg1, ov2, etc.).
+#   * Replace (X) with the interface number (e.g. wg1, ov2, etc.).
 #
 #   Zapret DPI routing:
 #     ze / zapret-enable   - Enable zapret
@@ -169,7 +169,7 @@ easy_install() {
   log_info "Installing necessary components."
 
   # Install required packages for 'zapret' (maybe necessary: curl iptables ip6tables ipset)
-  for package in coreutils-id bind-dig ncat procps-ng-sysctl dos2unix; do
+  for package in coreutils-id coreutils-sort bind-dig ncat procps-ng-sysctl dos2unix; do
     if ! opkg list-installed | grep -q "^$package"; then
       opkg update && opkg install "$package"
       log_debug "Installed package: $package"
@@ -210,7 +210,7 @@ easy_install() {
     \) -exec chmod 755 {} + && log_debug "Set 755 on relevant binaries and scripts in '$SCR_DIR'"
 
   log_info "Checking for compatible binaries."
-  for arch in aarch64 armv7hf arm; do
+  for arch in linux-arm64 linux-armv7hf linux-arm; do
     arch_dir="$ZAPRET_DIR/binaries/$arch"
     [ ! -d "$arch_dir" ] && {
       log_warn "Directory '$arch' missing. Try to run 'update' if no compatible binaries found."
@@ -242,12 +242,20 @@ easy_install() {
 }
 
 easy_update() {
-  url="https://github.com/NOFEXtreme/multibypass/releases/latest/download/multibypass.tar.gz"
+  version="$1"
+  base_url="https://github.com/NOFEXtreme/multibypass/releases"
   archive="/jffs/scripts/multibypass.tar.gz"
   temp_dir="/tmp/multibypass_update"
   protected_dirs="zapret-custom.d" # Space-separated directories protected from overwrite
 
-  log_info "Downloading latest version from GitHub."
+  if [ -n "$version" ]; then
+    url="$base_url/download/$version/multibypass.tar.gz"
+    log_info "Downloading version $version from GitHub."
+  else
+    url="$base_url/latest/download/multibypass.tar.gz"
+    log_info "Downloading latest version from GitHub."
+  fi
+
   if curl --retry 3 --connect-timeout 3 -sSfL -o "$archive" "$url"; then
     log_debug "Disabling 'zapret' and 'x3mRouting'."
     zapret disable
@@ -484,7 +492,7 @@ zapret() {
 case "$(echo "$1" | awk '{print tolower($0)}')" in
   h | help) help ;;
   i | install) easy_install ;;
-  u | update) easy_update ;;
+  u | update) easy_update "$2" ;;
   un | uninstall) easy_uninstall ;;
   s | status) status ;;
   ns | nslookup) ns_lookup ;;
@@ -518,7 +526,7 @@ case "$(echo "$1" | awk '{print tolower($0)}')" in
     General:
       'h'  or 'help'                 - Show full help
       'i'  or 'install'              - Install all dependencies
-      'u'  or 'update'               - Update multibypass
+      'u'  or 'update [version]'     - Update multibypass (optionally specify version, e.g. 'update v2025.04.10-0415')
       'un' or 'uninstall'            - Uninstall multibypass
       's'  or 'status'               - Show current status
       'ns' or 'nslookup'             - Perform DNS lookups for x3m files
@@ -542,7 +550,7 @@ case "$(echo "$1" | awk '{print tolower($0)}')" in
         'ov(X)d' or 'ov(X)-disable'  - Disable
         'ov(X)r' or 'ov(X)-restart'  - Restart
 
-      * Replace (X) with the interface number (e.g., wg1, ov2, etc.).
+      * Replace (X) with the interface number (e.g. wg1, ov2, etc.).
 
     ------------------------------------
     Zapret control:

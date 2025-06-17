@@ -215,9 +215,9 @@ jobs:
             echo "Processing $dir"
             ls -l "$dir"
             case $dir in
-              *-linux-arm )     run_dir arm ;;
-              *-linux-arm64 )   run_dir aarch64 ;;
-              *-linux-armv7hf ) run_dir armv7hf ;;
+              *-linux-arm )     run_dir linux-arm ;;
+              *-linux-arm64 )   run_dir linux-arm64 ;;
+              *-linux-armv7hf ) run_dir linux-armv7hf ;;
             esac
           done
           ls -lhR

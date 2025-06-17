@@ -447,7 +447,6 @@ jobs:
                   unzip $f -d $dir && rm $f
                   if [[ $dir =~ win ]]; then
                     chmod -x $dir/*
-                    run_upx --force $dir/cygwin1.dll
                   fi
                   ;;
               esac
@@ -459,24 +458,24 @@ jobs:
               echo "Processing $dir"
               ls -l $dir
               case $dir in
-                *-android-arm64-v8a )   run_dir android-aarch64 ;;
+                *-android-arm64-v8a )   run_dir android-arm64 ;;
                 *-android-armeabi-v7a ) run_dir android-arm ;;
                 *-android-x86 )         run_dir android-x86 ;;
                 *-android-x86_64 )      run_dir android-x86_64 ;;
-                *-freebsd-x86_64 )      run_dir freebsd-x64 ;;
-                *-linux-arm )           run_dir arm ;;
-                *-linux-arm64 )         run_dir aarch64 ;;
-                *-linux-armv7hf )       run_dir armv7hf ;;
-                *-linux-mips64 )        run_dir mips64r2-msb ;;
-                *-linux-mipselsf )      run_dir mips32r1-lsb ;;
-                *-linux-mipssf )        run_dir mips32r1-msb ;;
-                *-linux-ppc )           run_dir ppc ;;
-                *-linux-x86 )           run_dir x86 ;;
-                *-linux-x86_64 )        run_dir x86_64 ;;
-                *-linux-lexra )         run_dir lexra ;;
+                *-freebsd-x86_64 )      run_dir freebsd-x86_64 ;;
+                *-linux-arm )           run_dir linux-arm ;;
+                *-linux-arm64 )         run_dir linux-arm64 ;;
+                *-linux-armv7hf )       run_dir linux-armv7hf ;;
+                *-linux-mips64 )        run_dir linux-mips64 ;;
+                *-linux-mipselsf )      run_dir linux-mipsel ;;
+                *-linux-mipssf )        run_dir linux-mips ;;
+                *-linux-ppc )           run_dir linux-ppc ;;
+                *-linux-x86 )           run_dir linux-x86 ;;
+                *-linux-x86_64 )        run_dir linux-x86_64 ;;
+                *-linux-lexra )         run_dir linux-lexra ;;
                 *-mac-x64 )             run_dir mac64 ;;
-                *-win-x86 )             run_dir win32 ;;
-                *-win-x86_64 )          run_dir win64 ;;
+                *-win-x86 )             run_dir windows-x86 ;;
+                *-win-x86_64 )          run_dir windows-x86_64 ;;
               esac
             fi
           done
