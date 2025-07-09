@@ -79,8 +79,6 @@ NFQWS_ENABLE=1
 # redirect outgoing traffic with connbytes limiter applied in both directions.
 NFQWS_PORTS_TCP=80,443
 NFQWS_PORTS_UDP=443
-NFQWS_PORTS_UDP_WG=51820,62715 # Comment out to disable wireguard custom script
-NFQWS_PORTS_UDP_DISCORD=50000-50099 # Comment out to disable discord custom script
 # PKT_OUT means connbytes dir original
 # PKT_IN means connbytes dir reply
 # this is --dpi-desync-cutoff=nX kernel mode implementation for linux. it saves a lot of CPU.
@@ -98,10 +96,37 @@ NFQWS_UDP_PKT_IN=0
 # hostlist markers are replaced to empty string if MODE_FILTER does not satisfy
 # <HOSTLIST_NOAUTO> appends ipset/zapret-hosts-auto.txt as normal list
 NFQWS_OPT="
---filter-tcp=$NFQWS_PORTS_TCP --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,host+4,midsld,endsld-5,sniext+1 --dpi-desync-fooling=badsum,badseq --dpi-desync-fake-tls=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin <HOSTLIST> --new
---filter-udp=$NFQWS_PORTS_UDP --dpi-desync=fake,ipfrag2 --dpi-desync-repeats=6 --dpi-desync-fake-quic=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin <HOSTLIST_NOAUTO>
-${NFQWS_PORTS_UDP_WG:+"--new --filter-udp=$NFQWS_PORTS_UDP_WG --filter-l7=wireguard --dpi-desync=fake"}
-${NFQWS_PORTS_UDP_DISCORD:+"--new --filter-udp=$NFQWS_PORTS_UDP_DISCORD --filter-l7=discord,stun --dpi-desync=fake"}
+--filter-tcp=$NFQWS_PORTS_TCP
+--filter-l7=http,tls
+--dpi-desync=fake,multidisorder
+--dpi-desync-split-pos=3,midsld+1
+--dpi-desync-fooling=badsum,badseq
+--dpi-desync-fake-tls=!
+<HOSTLIST>
+
+--new
+--filter-udp=$NFQWS_PORTS_UDP
+--filter-l7=quic
+--dpi-desync=fake,ipfrag2
+--dpi-desync-repeats=3
+--dpi-desync-fake-quic=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin
+<HOSTLIST_NOAUTO>
+"
+# Wireguard custom script
+NFQWS_PORTS_UDP_WG=51820 # Comment out this line to disable
+[ -n "$NFQWS_PORTS_UDP_WG" ] && NFQWS_OPT="$NFQWS_OPT
+--new
+--filter-udp=$NFQWS_PORTS_UDP_WG
+--filter-l7=wireguard
+--dpi-desync=fake
+"
+# Discord custom script
+NFQWS_PORTS_UDP_DISCORD=50000-50099 # Comment out this line to disable
+[ -n "$NFQWS_PORTS_UDP_DISCORD" ] && NFQWS_OPT="$NFQWS_OPT
+--new
+--filter-udp=$NFQWS_PORTS_UDP_DISCORD
+--filter-l7=discord,stun
+--dpi-desync=fake
 "
 
 # none,ipset,hostlist,autohostlist
@@ -142,7 +167,7 @@ DISABLE_IPV6=1
 # drop icmp time exceeded messages for nfqws tampered connections
 # in POSTNAT mode this can interfere with default mtr/traceroute in tcp or udp mode. use source port not redirected to nfqws
 # set to 0 if you are not expecting connection breakage due to icmp in response to TCP SYN or UDP
-FILTER_TTL_EXPIRED_ICMP=1
+FILTER_TTL_EXPIRED_ICMP=0
 
 # select which init script will be used to get ip or host list
 # possible values : get_user.sh get_antizapret.sh get_combined.sh get_reestr.sh get_hostlist.sh

@@ -352,33 +352,46 @@ easy_uninstall() {
 status() {
   chains="PREROUTING INPUT FORWARD OUTPUT POSTROUTING"
   tables="mangle nat"
-  for chain in $chains; do
-    for table in $tables; do
-      if iptables -t "$table" -nL "$chain" >/dev/null 2>&1; then # Check if chain exists in table
-        printf "\n" && log_debug "Current state of $chain chain: iptables -nvL $chain -t $table --line"
-        iptables -nvL "$chain" -t "$table" --line
+
+  printf "\n========== IPTABLES \n"
+
+  for table in $tables; do
+    printf "\n===== Table: %s\n" "$table"
+    for chain in $chains; do
+      if iptables -t "$table" -nL "$chain" >/dev/null 2>&1; then
+        entries=$(iptables -t "$table" -nL "$chain" | grep -c -v '^Chain\|^num\|^$')
+        if [ "$entries" -gt 0 ]; then
+          printf "\n == Chain: %s\n" "$chain"
+          iptables -nvL "$chain" -t "$table" --line | sed 's/^/    /'
+        fi
       fi
     done
   done
 
-  printf "\n" && log_debug "Current state of IP rules:"
-  ip rule
+  printf "\n========== IP RULES \n\n"
+  ip rule | sed 's/^/  /'
 
-  printf "\n" && log_debug "List of all ipset tables:"
-  ipset list -t
-  log_debug "Use this command for IP list: ipset list <ipset-name>"
+  printf "\n========== IPSETS \n\n"
+  ipset list -t | sed 's/^/  /'
+  printf "\n Use this command to view specific set:\n\n ipset list <ipset-name>\n"
 
-  printf "\n" && log_debug "Content of the file: /jffs/configs/dnsmasq.conf.add"
-  [ -s /jffs/configs/dnsmasq.conf.add ] && cat /jffs/configs/dnsmasq.conf.add
+  printf "\n========== dnsmasq.conf.add \n\n"
+  if [ -s /jffs/configs/dnsmasq.conf.add ]; then
+    cat "/jffs/configs/dnsmasq.conf.add"
+  else
+    printf "  (file is empty or missing)\n"
+  fi
 
+  printf "\n========== Current state of rp_filter per interface \n\n"
   for iface in wgc1 wgc2 wgc3 wgc4 wgc5; do
-    # Get the path to rp_filter param of the iface
-    rp_filter_path="/proc/sys/net/ipv4/conf/$iface/rp_filter"
-    if [ -f "$rp_filter_path" ]; then
-      printf "\n" && log_debug "Current state of rp_filter for interface $iface is:"
-      cat "$rp_filter_path" # sysctl -n net.ipv4.conf.wgc1.rp_filter
+    path="/proc/sys/net/ipv4/conf/$iface/rp_filter"
+    if [ -f "$path" ]; then
+      value=$(cat "$path")
+      printf "  %s: %s\n" "$iface" "$value"
     fi
   done
+
+  printf "\n"
 }
 
 ns_lookup() {
