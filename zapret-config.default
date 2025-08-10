@@ -102,13 +102,14 @@ NFQWS_OPT="
 --dpi-desync-split-pos=3,midsld+1
 --dpi-desync-fooling=badsum,badseq
 --dpi-desync-fake-tls=!
+--dpi-desync-fake-tls=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin
 <HOSTLIST>
 
 --new
 --filter-udp=$NFQWS_PORTS_UDP
 --filter-l7=quic
 --dpi-desync=fake,ipfrag2
---dpi-desync-repeats=3
+--dpi-desync-repeats=6
 --dpi-desync-fake-quic=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin
 <HOSTLIST_NOAUTO>
 "

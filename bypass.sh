@@ -6,7 +6,7 @@
 # - AsusWrt Merlin: https://github.com/RMerl/asuswrt-merlin.ng
 # - AsusWrt Merlin GNUton's Builds: https://github.com/gnuton/asuswrt-merlin.ng
 #
-# VERSION=1.1
+# VERSION=1.2
 # Author: NOFEXtream
 #
 # Dependents:
