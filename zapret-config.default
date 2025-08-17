@@ -126,7 +126,15 @@ NFQWS_PORTS_UDP_DISCORD=50000-50099 # Comment out this line to disable
 [ -n "$NFQWS_PORTS_UDP_DISCORD" ] && NFQWS_OPT="$NFQWS_OPT
 --new
 --filter-udp=$NFQWS_PORTS_UDP_DISCORD
---filter-l7=discord,stun
+--filter-l7=discord
+--dpi-desync=fake
+"
+# STUN custom script
+NFQWS_PORTS_UDP_STUN=1400,3482,20000-65535 # Comment out this line to disable
+[ -n "$NFQWS_PORTS_UDP_STUN" ] && NFQWS_OPT="$NFQWS_OPT
+--new
+--filter-udp=$NFQWS_PORTS_UDP_STUN
+--filter-l7=stun
 --dpi-desync=fake
 "
 

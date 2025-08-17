@@ -1,22 +1,22 @@
-# This script creates iptables/nftables rules to send WireGuard handshake packets to nfqws
-# using ports specified in `$NFQWS_PORTS_UDP_WG` (defined in the zapret-config.sh).
-# Initializes `$SET_NAME` with `$SUBNETS`.
-
-# This script will not execute if the var is unset or commented out in the config.
+# This script creates iptables/nftables rules to send WireGuard handshake UDP packets to nfqws
+#
+# - WireGuard handshake
+#   - UDP packet size = 156 bytes (8 bytes header + 148 bytes payload)
+#   - Payload starts with: 0x01000000 (message type marker)
+#
+# Ports must be specified in `$NFQWS_PORTS_UDP_WG` in zapret-config.sh.
+# If unset or empty, no rules will be added and this script will do nothing.
 [ -z "$NFQWS_PORTS_UDP_WG" ] && return
 
-# Uncomment to enable the use of ipset/nfset.
+# Optionally limit by destination set `$SET_NAME` filled from `$SUBNETS`.
 #USE_SET=true
 
 if [ -n "$USE_SET" ]; then
-  # Add your WireGuard server IPs or subnets here, separated by spaces.
-  SUBNETS=""
+  SUBNETS="" # Add your WireGuard server IPs or subnets here, separated by spaces.
   SET_NAME=wireguard
 fi
 
-# size = 156 (8 udp header + 148 payload) && payload starts with 0x01000000
 zapret_custom_firewall() { # $1 - 1 - run, 0 - stop
-  local f
   local PORTS_IPT=$(replace_char - : "$NFQWS_PORTS_UDP_WG")
 
   local DISABLE_IPV6=1
@@ -34,7 +34,7 @@ zapret_custom_firewall() { # $1 - 1 - run, 0 - stop
     }
   fi
 
-  f="-p udp -m multiport --dports $PORTS_IPT -m u32 --u32"
+  local f="-p udp -m multiport --dports $PORTS_IPT -m u32 --u32"
 
   if [ -n "$USE_SET" ]; then
     fw_nfqws_post "$1" "$f 0>>22&0x3C@4>>16=0x9c&&0>>22&0x3C@8=0x01000000 $dest_set" "$f 44>>16=0x9c&&48=0x01000000 $dest_set" 200
@@ -46,8 +46,6 @@ zapret_custom_firewall() { # $1 - 1 - run, 0 - stop
 }
 
 zapret_custom_firewall_nft() { # stop logic is not required
-  local f
-
   local DISABLE_IPV6=1
 
   if [ -n "$USE_SET" ]; then
@@ -60,7 +58,7 @@ zapret_custom_firewall_nft() { # stop logic is not required
     nft_add_set_element $SET_NAME "$subnets"
   fi
 
-  f="udp dport {$NFQWS_PORTS_UDP_WG} length 156 @th,64,32 0x01000000"
+  local f="udp dport {$NFQWS_PORTS_UDP_WG} length == 156 @ih,0,32 0x01000000"
   if [ -n "$USE_SET" ]; then
     nft_fw_nfqws_post "$f $dest_set" "$f $dest_set" 200
   else
@@ -71,5 +69,5 @@ zapret_custom_firewall_nft() { # stop logic is not required
 zapret_custom_firewall_nft_flush() {
   # this function is called after all nft fw rules are deleted
   # however sets are not deleted. it's desired to clear sets here.
-  [ -n "$USE_SET" ] && nft_del_set $SET_NAME 2>/dev/
+  [ -n "$USE_SET" ] && nft_del_set $SET_NAME 2>/dev/null
 }

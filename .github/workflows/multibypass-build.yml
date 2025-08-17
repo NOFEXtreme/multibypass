@@ -6,6 +6,7 @@ on:
     branches:
       - master
     paths:
+      - "core/x3mRouting"
       - "core/zapret"
 
 env:
