@@ -54,6 +54,12 @@ GZIP_LISTS=1
 DESYNC_MARK=0x40000000
 DESYNC_MARK_POSTNAT=0x20000000
 
+# do not pass outgoing traffic to tpws/nfqws not marked with this bit
+# this setting allows to write your own rules to limit traffic that should be fooled
+# for example based on source IP or incoming interface name
+# no filter if not defined
+#FILTER_MARK=0x10000000
+
 TPWS_SOCKS_ENABLE=0
 # tpws socks listens on this port on localhost and LAN interfaces
 #TPPORT_SOCKS=987
@@ -109,8 +115,8 @@ NFQWS_OPT="
 --filter-udp=$NFQWS_PORTS_UDP
 --filter-l7=quic
 --dpi-desync=fake,ipfrag2
---dpi-desync-repeats=6
 --dpi-desync-fake-quic=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin
+--dpi-desync-repeats=6
 <HOSTLIST_NOAUTO>
 "
 # Wireguard custom script
@@ -130,12 +136,13 @@ NFQWS_PORTS_UDP_DISCORD=50000-50099 # Comment out this line to disable
 --dpi-desync=fake
 "
 # STUN custom script
-NFQWS_PORTS_UDP_STUN=1400,3482,20000-65535 # Comment out this line to disable
+NFQWS_PORTS_UDP_STUN=1400,3478,20000-65535 # Comment out this line to disable
 [ -n "$NFQWS_PORTS_UDP_STUN" ] && NFQWS_OPT="$NFQWS_OPT
 --new
 --filter-udp=$NFQWS_PORTS_UDP_STUN
 --filter-l7=stun
 --dpi-desync=fake
+--dpi-desync-repeats=3
 "
 
 # none,ipset,hostlist,autohostlist

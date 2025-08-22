@@ -382,15 +382,6 @@ status() {
     printf "  (file is empty or missing)\n"
   fi
 
-  printf "\n========== Current state of rp_filter per interface \n\n"
-  for iface in wgc1 wgc2 wgc3 wgc4 wgc5; do
-    path="/proc/sys/net/ipv4/conf/$iface/rp_filter"
-    if [ -f "$path" ]; then
-      value=$(cat "$path")
-      printf "  %s: %s\n" "$iface" "$value"
-    fi
-  done
-
   printf "\n"
 }
 
