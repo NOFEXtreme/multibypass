@@ -6,7 +6,7 @@
 # - AsusWrt Merlin: https://github.com/RMerl/asuswrt-merlin.ng
 # - AsusWrt Merlin GNUton's Builds: https://github.com/gnuton/asuswrt-merlin.ng
 #
-# VERSION=1.2
+# VERSION=1.2.3
 # Author: NOFEXtream
 #
 # Dependents:
@@ -24,7 +24,7 @@
 #   General:
 #     h  / help            - Show help
 #     i  / install         - Install dependencies
-#     u  / update          - Update multibypass
+#     u  / update [ver]    - Update multibypass (optionally specify version, e.g. 'update v2025.04.10-0415')
 #     un / uninstall       - Uninstall multibypass
 #     s  / status          - Show DNS, iptables, and ipset status
 #     ns / nslookup        - Perform DNS lookups for x3mRouting domains files
@@ -73,6 +73,12 @@ ZAPRET_DIR="$SCR_DIR/core/zapret"
 ZAPRET="$ZAPRET_DIR/init.d/sysv/zapret"
 NAT_START="/jffs/scripts/nat-start"
 SERVICES_STOP="/jffs/scripts/services-stop"
+
+# Prefer gawk locally if exist (GNU awk is faster)
+GAWK_BIN="$(which gawk 2>/dev/null)"
+if [ -n "$GAWK_BIN" ]; then
+  awk() { "$GAWK_BIN" "$@"; }
+fi
 
 help() {
   awk '/^# __help__/{f=1; next} f && NF{print} f && !NF{exit}' "$0" | more
@@ -168,8 +174,10 @@ process_file() {
 easy_install() {
   log_info "Installing necessary components."
 
-  # Install required packages for 'zapret' (maybe necessary: curl iptables ip6tables ipset)
-  for package in coreutils-id coreutils-sort bind-dig ncat procps-ng-sysctl dos2unix; do
+  # Install required packages for zapret
+  # If something does not work, you may also need:
+  # curl iptables ip6tables ipset libnetfilter-queue ip-full ca-bundle ca-certificates gzip grep
+  for package in coreutils-id coreutils-sort bind-dig ncat procps-ng-sysctl dos2unix gawk; do
     if ! opkg list-installed | grep -q "^$package"; then
       opkg update && opkg install "$package"
       log_debug "Installed package: $package"
@@ -501,8 +509,8 @@ case "$(echo "$1" | awk '{print tolower($0)}')" in
   s | status) status ;;
   ns | nslookup) ns_lookup ;;
   1 | e | enable | r | restart)
-    zapret enable
     x3mRouting "" enable
+    zapret enable
     ;;
   0 | d | disable)
     x3mRouting "" disable
