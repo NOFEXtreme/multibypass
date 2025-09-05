@@ -15,10 +15,10 @@ FWTYPE=iptables
 
 # options for ipsets
 # maximum number of elements in sets. also used for nft sets
-SET_MAXELEM=2048 # zapret default 522288 for big ipset
+SET_MAXELEM=2048 # default in zapret: 522288 (for big ipset)
 # too low hashsize can cause memory allocation errors on low RAM systems , even if RAM is enough
 # too large hashsize will waste lots of RAM
-IPSET_OPT="hashsize 1024 maxelem $SET_MAXELEM" # zapret default 262144 for big ipset
+IPSET_OPT="hashsize 1024 maxelem $SET_MAXELEM" # default in zapret: 262144 (for big ipset)
 # dynamically generate additional ip. $1 = ipset/nfset/table name
 #IPSET_HOOK="/etc/zapret.ipset.hook"
 
@@ -26,18 +26,18 @@ IPSET_OPT="hashsize 1024 maxelem $SET_MAXELEM" # zapret default 262144 for big i
 IP2NET_OPT4="--prefix-length=22-30 --v4-threshold=3/4"
 IP2NET_OPT6="--prefix-length=56-64 --v6-threshold=5"
 # options for auto hostlist. Uncomment this 3-lines if you use it:
-#AUTOHOSTLIST_RETRANS_THRESHOLD=3
-#AUTOHOSTLIST_FAIL_THRESHOLD=3
-#AUTOHOSTLIST_FAIL_TIME=60
+AUTOHOSTLIST_RETRANS_THRESHOLD=3
+AUTOHOSTLIST_FAIL_THRESHOLD=3
+AUTOHOSTLIST_FAIL_TIME=60
 # 1 = debug autohostlist positives to ipset/zapret-hosts-auto-debug.log
 AUTOHOSTLIST_DEBUGLOG=0
 #
-# On ASUSWRT routers like RT-AX82U and RT-AX58U with Merlin firmware,
-# liberal mode is enabled by default (possibly on others too).
-# If zapret manages this setting, it might set it to 0, which can cause internet issues.
+# On ASUSWRT-Merlin routers (e.g. RT-AX82U, RT-AX58U)
+# nf_conntrack liberal mode is usually enabled by default.
+# If zapret changes it to 0, internet issues may appear.
 #
-# Uncomment this line if you use 'autohostlist' to stop zapret from managing it:
-#SKIP_CONNTRACK_LIBERAL_MODE=true
+# Required when using 'autohostlist' to stop zapret from managing it:
+SKIP_CONNTRACK_LIBERAL_MODE=1
 
 # number of parallel threads for domain list resolves
 MDIG_THREADS=30
@@ -86,8 +86,9 @@ NFQWS_ENABLE=1
 NFQWS_PORTS_TCP=80,443
 NFQWS_PORTS_UDP=443
 #
-# ASUS-Merlin: enable PREROUTING mirror for UDP/443 (see 10-asuswrt-merlin-quic-fix.sh for details & alternatives)
-NFQWS_FIX_MERLIN_QUIC=1
+# ASUS-Merlin: enable PREROUTING mirror for UDP/443
+# (see 10-asuswrt-merlin-quic-fix.sh for details & alternatives)
+NFQWS_FIX_MERLIN_QUIC=1 # comment out this line to disable
 #
 # PKT_OUT means connbytes dir original
 # PKT_IN means connbytes dir reply
@@ -108,12 +109,10 @@ NFQWS_UDP_PKT_IN=0
 NFQWS_OPT="
 --filter-tcp=$NFQWS_PORTS_TCP
 --filter-l7=http,tls
---dpi-desync=fake,multidisorder
---dpi-desync-split-pos=3,midsld+1
---dpi-desync-fooling=badsum,badseq
---dpi-desync-fake-tls=!
---dpi-desync-fake-tls=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin
---dpi-desync-repeats=5
+--dpi-desync=multisplit
+--dpi-desync-split-pos=2,host+4,midsld,sniext+1
+--dpi-desync-split-seqovl=308
+--dpi-desync-split-seqovl-pattern=$ZAPRET_BASE/files/fake/tls_clienthello_vk_com.bin
 <HOSTLIST>
 
 --new
@@ -121,7 +120,7 @@ NFQWS_OPT="
 --filter-l7=quic
 --dpi-desync=fake
 --dpi-desync-fake-quic=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin
---dpi-desync-repeats=10
+--dpi-desync-repeats=2
 <HOSTLIST_NOAUTO>
 "
 # Wireguard custom script
@@ -131,23 +130,26 @@ NFQWS_PORTS_UDP_WG=51820 # Comment out this line to disable
 --filter-udp=$NFQWS_PORTS_UDP_WG
 --filter-l7=wireguard
 --dpi-desync=fake
+--dpi-desync-fake-wireguard=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin
+--dpi-desync-repeats=2
 "
 # Discord custom script
-NFQWS_PORTS_UDP_DISCORD=50000-50099 # Comment out this line to disable
-[ -n "$NFQWS_PORTS_UDP_DISCORD" ] && NFQWS_OPT="$NFQWS_OPT
+NFQWS_CUSTOM_DISCORD=1 # Comment out this line to disable
+[ -n "$NFQWS_CUSTOM_DISCORD" ] && NFQWS_OPT="$NFQWS_OPT
 --new
---filter-udp=$NFQWS_PORTS_UDP_DISCORD
 --filter-l7=discord
 --dpi-desync=fake
+--dpi-desync-fake-discord=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin
+--dpi-desync-repeats=2
 "
 # STUN custom script
-NFQWS_PORTS_UDP_STUN=1400,3478,20000-65535 # Comment out this line to disable
-[ -n "$NFQWS_PORTS_UDP_STUN" ] && NFQWS_OPT="$NFQWS_OPT
+NFQWS_CUSTOM_STUN=1 # Comment out this line to disable
+[ -n "$NFQWS_CUSTOM_STUN" ] && NFQWS_OPT="$NFQWS_OPT
 --new
---filter-udp=$NFQWS_PORTS_UDP_STUN
 --filter-l7=stun
 --dpi-desync=fake
---dpi-desync-repeats=3
+--dpi-desync-fake-stun=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin
+--dpi-desync-repeats=2
 "
 
 # none,ipset,hostlist,autohostlist

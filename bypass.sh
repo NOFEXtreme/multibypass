@@ -6,7 +6,7 @@
 # - AsusWrt Merlin: https://github.com/RMerl/asuswrt-merlin.ng
 # - AsusWrt Merlin GNUton's Builds: https://github.com/gnuton/asuswrt-merlin.ng
 #
-# VERSION=1.2.3
+# VERSION=1.2.4
 # Author: NOFEXtream
 #
 # Dependents:
@@ -254,7 +254,6 @@ easy_update() {
   base_url="https://github.com/NOFEXtreme/multibypass/releases"
   archive="/jffs/scripts/multibypass.tar.gz"
   temp_dir="/tmp/multibypass_update"
-  protected_dirs="zapret-custom.d" # Space-separated directories protected from overwrite
 
   if [ -n "$version" ]; then
     url="$base_url/download/$version/multibypass.tar.gz"
@@ -274,27 +273,6 @@ easy_update() {
     mkdir -p "$temp_dir"
 
     if tar -xzf "$archive" -C "$temp_dir"; then
-      for dir in $protected_dirs; do
-        src_dir="$temp_dir/multibypass/$dir"
-        dest_dir="$SCR_DIR/$dir"
-
-        [ -d "$dest_dir" ] || continue
-
-        if find "$src_dir" -type f | grep -q .; then
-          modified_file=$(find "$src_dir" -type f | while read -r new_file; do
-            old_file="${new_file#"$src_dir"}"
-            [ -f "$dest_dir$old_file" ] || continue
-            cmp -s "$new_file" "$dest_dir$old_file" || {
-              echo "$old_file"
-              break
-            }
-          done)
-          [ "$modified_file" ] && {
-            log_warn "Dir '$dest_dir' has modified file: '$modified_file'. Skipping overwrite." && rm -rf "$src_dir"
-          }
-        fi
-      done
-
       log_debug "Applying update."
       (cd "$temp_dir/multibypass" && cp -R . "$SCR_DIR/")
       rm -rf "$archive" "$temp_dir"
