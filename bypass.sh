@@ -6,7 +6,7 @@
 # - AsusWrt Merlin: https://github.com/RMerl/asuswrt-merlin.ng
 # - AsusWrt Merlin GNUton's Builds: https://github.com/gnuton/asuswrt-merlin.ng
 #
-# VERSION=1.2
+# VERSION=1.3
 # Author: NOFEXtream
 #
 # Dependents:
@@ -24,7 +24,7 @@
 #   General:
 #     h  / help            - Show help
 #     i  / install         - Install dependencies
-#     u  / update          - Update multibypass
+#     u  / update [ver]    - Update multibypass (optionally specify version, e.g. 'update v2025.04.10-0415')
 #     un / uninstall       - Uninstall multibypass
 #     s  / status          - Show DNS, iptables, and ipset status
 #     ns / nslookup        - Perform DNS lookups for x3mRouting domains files
@@ -73,6 +73,12 @@ ZAPRET_DIR="$SCR_DIR/core/zapret"
 ZAPRET="$ZAPRET_DIR/init.d/sysv/zapret"
 NAT_START="/jffs/scripts/nat-start"
 SERVICES_STOP="/jffs/scripts/services-stop"
+
+# Prefer gawk locally if exist (GNU awk is faster)
+GAWK_BIN="$(which gawk 2>/dev/null)"
+if [ -n "$GAWK_BIN" ]; then
+  awk() { "$GAWK_BIN" "$@"; }
+fi
 
 help() {
   awk '/^# __help__/{f=1; next} f && NF{print} f && !NF{exit}' "$0" | more
@@ -168,8 +174,10 @@ process_file() {
 easy_install() {
   log_info "Installing necessary components."
 
-  # Install required packages for 'zapret' (maybe necessary: curl iptables ip6tables ipset)
-  for package in coreutils-id coreutils-sort bind-dig ncat procps-ng-sysctl dos2unix; do
+  # Install required packages for zapret
+  # If something does not work, you may also need:
+  # curl iptables ip6tables ipset libnetfilter-queue ip-full ca-bundle ca-certificates gzip grep
+  for package in coreutils-id coreutils-sort bind-dig ncat procps-ng-sysctl dos2unix gawk; do
     if ! opkg list-installed | grep -q "^$package"; then
       opkg update && opkg install "$package"
       log_debug "Installed package: $package"
@@ -246,7 +254,6 @@ easy_update() {
   base_url="https://github.com/NOFEXtreme/multibypass/releases"
   archive="/jffs/scripts/multibypass.tar.gz"
   temp_dir="/tmp/multibypass_update"
-  protected_dirs="zapret-custom.d" # Space-separated directories protected from overwrite
 
   if [ -n "$version" ]; then
     url="$base_url/download/$version/multibypass.tar.gz"
@@ -255,6 +262,7 @@ easy_update() {
     url="$base_url/latest/download/multibypass.tar.gz"
     log_info "Downloading latest version from GitHub."
   fi
+  log_debug "Version URL: $url"
 
   if curl --retry 3 --connect-timeout 3 -sSfL -o "$archive" "$url"; then
     log_debug "Disabling 'zapret' and 'x3mRouting'."
@@ -266,39 +274,20 @@ easy_update() {
     mkdir -p "$temp_dir"
 
     if tar -xzf "$archive" -C "$temp_dir"; then
-      for dir in $protected_dirs; do
-        src_dir="$temp_dir/multibypass/$dir"
-        dest_dir="$SCR_DIR/$dir"
-
-        [ -d "$dest_dir" ] || continue
-
-        if find "$src_dir" -type f | grep -q .; then
-          modified_file=$(find "$src_dir" -type f | while read -r new_file; do
-            old_file="${new_file#"$src_dir"}"
-            [ -f "$dest_dir$old_file" ] || continue
-            cmp -s "$new_file" "$dest_dir$old_file" || {
-              echo "$old_file"
-              break
-            }
-          done)
-          [ "$modified_file" ] && {
-            log_warn "Dir '$dest_dir' has modified file: '$modified_file'. Skipping overwrite." && rm -rf "$src_dir"
-          }
-        fi
-      done
-
       log_debug "Applying update."
       (cd "$temp_dir/multibypass" && cp -R . "$SCR_DIR/")
+      which sync >/dev/null 2>&1 && sync
       rm -rf "$archive" "$temp_dir"
 
-      chmod +x "$0"
-      exec "$0" install
+      chmod +x "$SCR_DIR/$SCR_NAME.sh"
+      log_debug "Executing updated script (install)"
+      exec "$SCR_DIR/$SCR_NAME.sh" install
     else
-      log_error "Extraction failed. Update stopped."
+      log_error "Extraction failed, update stopped."
       rm -rf "$temp_dir"
     fi
   else
-    log_error "Failed to download. Update stopped."
+    log_error "Download failed, update stopped."
   fi
 }
 
@@ -501,8 +490,8 @@ case "$(echo "$1" | awk '{print tolower($0)}')" in
   s | status) status ;;
   ns | nslookup) ns_lookup ;;
   1 | e | enable | r | restart)
-    zapret enable
     x3mRouting "" enable
+    zapret enable
     ;;
   0 | d | disable)
     x3mRouting "" disable

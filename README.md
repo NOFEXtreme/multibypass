@@ -1,8 +1,6 @@
 # Multibypass
 
-**Multibypass** is a project that easily integrates [zapret](https://github.com/bol-van/zapret) for DPI bypass
-and [x3mRouting](https://github.com/NOFEXtreme/x3mRouting/blob/master/x3mRouting.sh) for domain-based VPN routing
-on [ASUSWRT-Merlin](https://github.com/gnuton/asuswrt-merlin.ng).
+**Multibypass** is a project that easily integrates [zapret](https://github.com/bol-van/zapret) for DPI bypass and [x3mRouting](https://github.com/NOFEXtreme/x3mRouting/blob/master/x3mRouting.sh) for domain-based VPN routing on [ASUSWRT-Merlin](https://github.com/gnuton/asuswrt-merlin.ng).
 
 Dependencies:
 
@@ -34,10 +32,8 @@ Tested on models:
 
 **Notes:**
 
-- For x3mRouting, if domains files are missing,
-  you will be prompted to create them when enabling WireGuard or OpenVPN routing.
-- For better DPI bypass, edit the zapret-config.sh file. Instructions can be found
-  here: [Zapret README](https://github.com/bol-van/zapret/blob/master/docs/readme.en.md).
+- For x3mRouting, if domains files are missing, you will be prompted to create them when enabling WireGuard or OpenVPN routing.
+- For better DPI bypass, edit the zapret-config.sh file. Instructions can be found here: [Zapret README](https://github.com/bol-van/zapret/blob/master/docs/readme.en.md).
 
 ---
 
@@ -49,6 +45,9 @@ Tested on models:
    sh /jffs/scripts/multibypass/bypass.sh update
    ```
    *will automatically download and install the latest version.*
+
+   > Files in `zapret-custom.d` are always overwritten during update. If you’ve modified them, back up or rename them beforehand.  
+   > `zapret-config.sh` is not overwritten; it’s recommended to compare it with the release and merge any changes if needed.
 
 ---
 
@@ -79,7 +78,7 @@ git submodule update --remote --recursive
 
 ---
 
-<div align="center">
+<div style="text-align:center;">
 
 [![Release Stats](https://img.shields.io/badge/Release%20stats-34495E?style=for-the-badge&color=2d4053&labelColor=2d4053)](https://somsubhra.github.io/github-release-stats/?username=NOFEXtreme&repository=multibypass)
 [![Latest](https://img.shields.io/github/release/NOFEXtreme/multibypass.svg?label=Latest&style=for-the-badge&color=435f7d&labelColor=2d4053)](https://github.com/NOFEXtreme/multibypass/releases/latest)
