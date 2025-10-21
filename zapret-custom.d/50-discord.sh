@@ -11,8 +11,8 @@
 [ -z "$NFQWS_PORTS_UDP_DISCORD" ] && return
 
 zapret_custom_firewall() { # $1 - 1 - run, 0 - stop
-	local port_range=$(replace_char - : "$NFQWS_PORTS_UDP_DISCORD")
-  local f="-p udp --dport $port_range -m u32 --u32"
+	local ports_ipt=$(replace_char - : "$NFQWS_PORTS_UDP_DISCORD")
+  local f="-p udp -m multiport --dports $ports_ipt -m u32 --u32"
 
   local dis_v4="0>>22&0x3C@4>>16=0x52&&0>>22&0x3C@8=0x00010046&&0>>22&0x3C@16=0&&0>>22&0x3C@76=0"
   local dis_v6="44>>16=0x52&&48=0x00010046&&56=0&&116=0"

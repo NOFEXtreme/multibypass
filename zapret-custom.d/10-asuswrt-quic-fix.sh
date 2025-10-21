@@ -1,48 +1,78 @@
-# ASUS-Merlin QUIC/NFQWS fix for iptables
+# Asuswrt-Merlin QUIC UDP fix for NFQWS (iptables)
 #
-# Problem:
-#   Hardware acceleration (Flow Cache) can bypass Netfilter,
-#   causing NFQWS to miss initial QUIC (UDP/443) packets in POSTROUTING.
+# Problem
+#   On Asuswrt, hardware acceleration can bypass Netfilter,
+#   causing NFQWS to miss QUIC Initial packets in POSTROUTING.
 #
-# Script solution:
-#   Mirror NFQUEUE for UDP/443 in PREROUTING (mangle) so NFQWS the sees first packets
-#   before offload kicks in. Remove POSTROUTING mirror to prevent duplicates.
+# What this script does
+#   Adds a PREROUTING rule that matches only QUIC Initial and sets MARK 0x1 with mask 0x7.
+#   It prevents QUIC Initial packets from being processed by hw accel, so NFQWS can handle them correctly.
 #
-# Alternatives (use instead of this script):
-#   1) Run NFQWS with disabled conntrack:
-#       Add in zapret-config → NFQWS_OPT="--ctrack-disable=1 ..."
-#   2) Disable hardware acceleration for full Netfilter visibility: (console)
-#        fc status
-#        fc config --hw-accel 0   # Flow Cache: Disabled → NFQWS fully sees UDP/443, but WAN speed drops
-#        fc config --hw-accel 1   # Flow Cache: Enabled (default, high speed)
-#      Note: `fc disable` often has no real effect (Archer/Runner may remain enabled).
+# Why bits 0x1 and 0x7
+#   Asuswrt uses these bits to disable CTF for marked flows. Details explained by RMerlin:
+#   https://www.snbforums.com/threads/selective-routing-with-asuswrt-merlin.9311/page-23
 #
-[ "${NFQWS_FIX_MERLIN_QUIC:-0}" = "1" ] || return 0
+# Related zapret documentation
+#   RU: https://github.com/bol-van/zapret/blob/master/docs/readme.md#flow-offloading
+#   EN: https://github.com/bol-van/zapret/blob/master/docs/readme.en.md#flow-offloading
+#
+# Note
+#   Hardware acceleration on Asuswrt may also be called
+#   CTF (Cut Through Forwarding) or FA (Flow Accelerator),
+#   and is known as flow offload on other routers.
+#
+# Activation
+#   This fix is active by default. Disabled automatically if UDP fix is enabled.
+#   Runs only if NFQWS_PORTS_UDP includes port 443 or NFQWS_PORTS_UDP_QUIC is set.
+#   If NFQWS_PORTS_UDP_QUIC is used, its ports must also exist in NFQWS_PORTS_UDP.
+#
+[ "${NFQWS_FIX_MERLIN_UDP:-0}" = "0" ] || return
+[ "$FWTYPE" = "iptables" ] || return
+
+# Check if NFQWS_PORTS_UDP includes port 443 (exact or inside a range)
+# Returns 0 if 443 is found, otherwise 1
+ports_list_has_443() {
+  local ports="${NFQWS_PORTS_UDP:-}"
+  [ -n "$ports" ] || return 1
+
+  local IFS=,
+  for p in $ports; do
+    case "$p" in
+      443) return 0 ;;
+      *-*)
+        local start="${p%-*}"
+        local end="${p#*-}"
+        [ "$start" -le 443 ] && [ 443 -le "$end" ] && return 0
+        ;;
+    esac
+  done
+  return 1
+}
+[ -n "$NFQWS_PORTS_UDP_QUIC" ] || ports_list_has_443 || return
 
 zapret_custom_firewall() { # $1 - 1 - run, 0 - stop
-  [ "$FWTYPE" = "iptables" ] || return 0
-  [ "$DISABLE_IPV4" = "1" ] && return 0
-
-  local DISABLE_IPV6=1
-  local qnum="${QNUM:-200}"
-  local pkts="${NFQWS_UDP_PKT_OUT:-6}"
-  local ports_ipt=$(replace_char - : "${NFQWS_PORTS_UDP:-443}")
+  local ports_ipt=$(replace_char - : "${NFQWS_PORTS_UDP_QUIC:-443}")
 
   # Get LAN interfaces from config or autodetect
   local ifaces=${IFACE_LAN:-$(ip -o link show up | awk -F': ' '{print $2}' | grep -E '^(br0|wgs[0-9]+)$')}
 
-  # Match first N UDP packets on given ports
-  local f="-p udp -m multiport --dports $ports_ipt $ipt_connbytes 1:$pkts"
+  # Rule components
+  local m="$(ipt_mark_filter) -m mark ! --mark $DESYNC_MARK/$DESYNC_MARK"
+  local p="-p udp -m multiport --dports $ports_ipt -m u32 --u32"
+  local quic_v4="0>>22&0x3C@4>>16=264:65535&&0>>22&0x3C@8>>28=0xC&&0>>22&0x3C@9=0x00000001"
+  local quic_v6="44>>16=264:65535&&48>>28=0xC&&49=0x00000001"
+  local mark_offload_off="-j MARK --set-mark 0x1/0x7"
 
-  # PREROUTING per-interface: catch initial packets before offload/NAT
-  local rule="$(ipt_mark_filter) -m mark ! --mark $DESYNC_MARK/$DESYNC_MARK $f $IPSET_EXCLUDE dst -j NFQUEUE --queue-num $qnum --queue-bypass"
-
-  # Add/remove rules for each interface
+  # Add/remove rules per interface
   for i in $ifaces; do
-    ipt_print_op "$1" "$f -i $i" "nfqws prerouting (qnum $qnum)"
-    ipta_add_del "$1" PREROUTING -t mangle -i $i $rule
-  done
+    [ "$DISABLE_IPV4" = "1" ] || {
+      ipt_print_op "$1" "$p $quic_v4" "nfqws prerouting (fix) disable offload for QUIC on $i"
+      ipta_add_del "$1" PREROUTING -t mangle -i "$i" $m $p $quic_v4 $IPSET_EXCLUDE dst $mark_offload_off
+    }
 
-  # remove stock POSTROUTING mirror to avoid duplicates
-  [ "$1" = "1" ] && fw_nfqws_post 0 "$f" "" "$qnum"
+    [ "$DISABLE_IPV6" = "1" ] || {
+      ipt_print_op "$1" "$p $quic_v6" "nfqws prerouting (fix) disable offload for QUIC on $i" 6
+      ipt6a_add_del "$1" PREROUTING -t mangle -i "$i" $m $p $quic_v6 $IPSET_EXCLUDE6 dst $mark_offload_off
+    }
+  done
 }
