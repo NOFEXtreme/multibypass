@@ -4,7 +4,7 @@
 
 Dependencies:
 
-- [ASUS-Merlin](https://www.asuswrt-merlin.net/)
+- [ASUS-Merlin](https://www.asuswrt-merlin.net/) 3004.388.9 or newer for x3mRouting
 - [Entware](https://github.com/RMerl/asuswrt-merlin.ng/wiki/Entware)
 
 Tested on models:
@@ -47,6 +47,7 @@ Tested on models:
    *will automatically download and install the latest version.*
 
    > Files in `zapret-custom.d` are always overwritten during update. If you’ve modified them, back up or rename them beforehand.  
+
    > `zapret-config.sh` is not overwritten; it’s recommended to compare it with the release and merge any changes if needed.
 
 ---
