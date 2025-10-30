@@ -107,8 +107,11 @@ NFQWS_OPT="
 --dpi-desync=fake,multidisorder
 --dpi-desync-split-pos=3,midsld+1
 --dpi-desync-fake-tls=0x00000000
+--dpi-desync-fake-tls-mod=none
 --dpi-desync-fake-tls=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin
+--dpi-desync-fake-tls-mod=none
 --dpi-desync-fooling=badseq,md5sig,ts
+--dpi-desync-badseq-increment=10000000
 --dpi-desync-repeats=2
 <HOSTLIST>
 
@@ -145,6 +148,17 @@ NFQWS_CUSTOM_STUN=1 # Comment out this line to disable
 --filter-l7=stun
 --dpi-desync=fake
 --dpi-desync-repeats=2
+"
+# Games custom script
+#NFQWS_CUSTOM_GAMES=1 # Comment out this line to disable
+NFQWS_GAMES_PORTS_UDP=1024-65535
+NFQWS_GAMES_OPT="
+--filter-udp=$NFQWS_GAMES_PORTS_UDP
+--filter-l7=unknown
+--dpi-desync=fake
+--dpi-desync-fake-unknown-udp=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin
+--dpi-desync-repeats=2
+--dpi-desync-any-protocol
 "
 
 # none,ipset,hostlist,autohostlist
