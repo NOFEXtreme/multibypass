@@ -79,7 +79,7 @@ git submodule update --remote --recursive
 
 ---
 
-<div style="text-align:center;">
+<div align="center">
 
 [![Release Stats](https://img.shields.io/badge/Release%20stats-34495E?style=for-the-badge&color=2d4053&labelColor=2d4053)](https://somsubhra.github.io/github-release-stats/?username=NOFEXtreme&repository=multibypass)
 [![Latest](https://img.shields.io/github/release/NOFEXtreme/multibypass.svg?label=Latest&style=for-the-badge&color=435f7d&labelColor=2d4053)](https://github.com/NOFEXtreme/multibypass/releases/latest)
