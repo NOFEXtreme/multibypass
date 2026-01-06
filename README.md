@@ -10,7 +10,8 @@ Dependencies:
 Tested on models:
 
 - **RT-AX82U**
-- **RT-AX58U**
+- **RT-AX58U V2**
+- **TUF-AX3000 V2**
 
 ---
 

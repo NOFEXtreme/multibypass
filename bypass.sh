@@ -184,10 +184,10 @@ easy_install() {
     fi
   done
 
-  find "$SCR_DIR" -type d -exec chmod 755 {} + && log_debug "All directories set to 755."
-  find "$SCR_DIR" -type f -exec chmod 644 {} + && log_debug "All files set to 644."
+  /opt/bin/find "$SCR_DIR" -type d -exec chmod 755 {} + && log_debug "All directories set to 755."
+  /opt/bin/find "$SCR_DIR" -type f -exec chmod 644 {} + && log_debug "All files set to 644."
 
-  find "$SCR_DIR" \
+  /opt/bin/find "$SCR_DIR" \
     \( -name tpws \
     -o -name nfqws \
     -o -name ip2net \
@@ -227,7 +227,7 @@ easy_install() {
 
     if [ -f "$arch_dir/ip2net" ] && echo 0.0.0.0 | "$arch_dir"/ip2net >/dev/null 2>&1; then
       log_debug "Using architecture: $arch" && bin_found=1
-      find "$ZAPRET_DIR/binaries" -mindepth 1 -maxdepth 1 ! -name "$arch" -type d -exec rm -rf {} +
+      /opt/bin/find "$ZAPRET_DIR/binaries" -mindepth 1 -maxdepth 1 ! -name "$arch" -type d -exec rm -rf {} +
 
       for dir in ip2net mdig nfq tpws; do
         bin="$dir" && [ "$dir" = "nfq" ] && bin="nfqws"
@@ -306,7 +306,7 @@ easy_uninstall() {
         case "${option:-y}" in
           [yY][eE][sS] | [yY])
             log_debug "Configuration files will be kept."
-            find "$SCR_DIR" -mindepth 1 ! \
+            /opt/bin/find "$SCR_DIR" -mindepth 1 ! \
               \( -name "zapret-config.sh" \
               -o -name "x3m-domains-*" \
               -o -name "zapret-hosts-*" \
@@ -364,9 +364,9 @@ status() {
   ipset list -t | sed 's/^/  /'
   printf "\n Use this command to view specific set:\n\n ipset list <ipset-name>\n"
 
-  printf "\n========== dnsmasq.conf.add \n\n"
+  printf "\n========== /jffs/configs/dnsmasq.conf.add (ipset only)\n\n"
   if [ -s /jffs/configs/dnsmasq.conf.add ]; then
-    cat "/jffs/configs/dnsmasq.conf.add"
+    grep -E '^[[:space:]]*[^#]*ipset' /jffs/configs/dnsmasq.conf.add
   else
     printf "  (file is empty or missing)\n"
   fi

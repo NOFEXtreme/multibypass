@@ -15,10 +15,10 @@ FWTYPE=iptables
 
 # options for ipsets
 # maximum number of elements in sets. also used for nft sets
-SET_MAXELEM=2048 # default in zapret: 522288 (for big ipset)
+SET_MAXELEM=32768 # default in zapret: 522288 (for big ipset)
 # too low hashsize can cause memory allocation errors on low RAM systems , even if RAM is enough
 # too large hashsize will waste lots of RAM
-IPSET_OPT="hashsize 1024 maxelem $SET_MAXELEM" # default in zapret: 262144 (for big ipset)
+IPSET_OPT="hashsize 16384 maxelem $SET_MAXELEM" # default in zapret: 262144 (for big ipset)
 # dynamically generate additional ip. $1 = ipset/nfset/table name
 #IPSET_HOOK="/etc/zapret.ipset.hook"
 
@@ -26,9 +26,9 @@ IPSET_OPT="hashsize 1024 maxelem $SET_MAXELEM" # default in zapret: 262144 (for 
 IP2NET_OPT4="--prefix-length=22-30 --v4-threshold=3/4"
 IP2NET_OPT6="--prefix-length=56-64 --v6-threshold=5"
 # options for auto hostlist. Uncomment this 3-lines if you use it:
-AUTOHOSTLIST_RETRANS_THRESHOLD=3
-AUTOHOSTLIST_FAIL_THRESHOLD=3
-AUTOHOSTLIST_FAIL_TIME=60
+#AUTOHOSTLIST_RETRANS_THRESHOLD=3
+#AUTOHOSTLIST_FAIL_THRESHOLD=3
+#AUTOHOSTLIST_FAIL_TIME=60
 # 1 = debug autohostlist positives to ipset/zapret-hosts-auto-debug.log
 AUTOHOSTLIST_DEBUGLOG=0
 #
@@ -89,7 +89,7 @@ NFQWS_PORTS_UDP=443
 # PKT_IN means connbytes dir reply
 # this is --dpi-desync-cutoff=nX kernel mode implementation for linux. it saves a lot of CPU.
 NFQWS_TCP_PKT_OUT=$((6+${AUTOHOSTLIST_RETRANS_THRESHOLD:-0}))
-NFQWS_TCP_PKT_IN=3
+NFQWS_TCP_PKT_IN=${AUTOHOSTLIST_RETRANS_THRESHOLD:-0}
 NFQWS_UDP_PKT_OUT=$((6+${AUTOHOSTLIST_RETRANS_THRESHOLD:-0}))
 NFQWS_UDP_PKT_IN=0
 # redirect outgoing traffic without connbytes limiter and incoming with connbytes limiter
@@ -104,14 +104,9 @@ NFQWS_UDP_PKT_IN=0
 NFQWS_OPT="
 --filter-tcp=$NFQWS_PORTS_TCP
 --filter-l7=http,tls
---dpi-desync=fake,multidisorder
---dpi-desync-split-pos=3,midsld+1
---dpi-desync-fake-tls=0x00000000
---dpi-desync-fake-tls-mod=none
+--dpi-desync=fake
 --dpi-desync-fake-tls=$ZAPRET_BASE/files/fake/tls_clienthello_www_google_com.bin
---dpi-desync-fake-tls-mod=none
---dpi-desync-fooling=badseq,md5sig,ts
---dpi-desync-badseq-increment=10000000
+--dpi-desync-fooling=ts
 --dpi-desync-repeats=2
 <HOSTLIST>
 
@@ -130,6 +125,7 @@ NFQWS_PORTS_UDP_WG=51820 # Comment out this line to disable
 --filter-udp=$NFQWS_PORTS_UDP_WG
 --filter-l7=wireguard
 --dpi-desync=fake
+--dpi-desync-fake-wireguard=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin
 --dpi-desync-repeats=2
 "
 # Discord custom script
@@ -139,6 +135,7 @@ NFQWS_PORTS_UDP_DISCORD=50000-50099 # Comment out this line to disable
 --filter-udp=$NFQWS_PORTS_UDP_DISCORD
 --filter-l7=discord
 --dpi-desync=fake
+--dpi-desync-fake-discord=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin
 --dpi-desync-repeats=2
 "
 # STUN custom script
@@ -147,19 +144,12 @@ NFQWS_CUSTOM_STUN=1 # Comment out this line to disable
 --new
 --filter-l7=stun
 --dpi-desync=fake
+--dpi-desync-fake-stun=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin
 --dpi-desync-repeats=2
 "
 # Games custom script
-#NFQWS_CUSTOM_GAMES=1 # Comment out this line to disable
-NFQWS_GAMES_PORTS_UDP=1024-65535
-NFQWS_GAMES_OPT="
---filter-udp=$NFQWS_GAMES_PORTS_UDP
---filter-l7=unknown
---dpi-desync=fake
---dpi-desync-fake-unknown-udp=$ZAPRET_BASE/files/fake/quic_initial_www_google_com.bin
---dpi-desync-repeats=2
---dpi-desync-any-protocol
-"
+#NFQWS_CUSTOM_GAMES=1 # Uncomment this line to enable
+# for more configuration options: multibypass/zapret-custom.d/40-games.sh
 
 # none,ipset,hostlist,autohostlist
 MODE_FILTER=hostlist
