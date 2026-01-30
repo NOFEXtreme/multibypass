@@ -149,6 +149,7 @@ NFQWS_CUSTOM_STUN=1 # Comment out this line to disable
 "
 # Games custom script
 #NFQWS_CUSTOM_GAMES=1 # Uncomment this line to enable
+NFQWS_GAMES_ASN=AS13335,AS16276,AS24940
 # for more configuration options: multibypass/zapret-custom.d/40-games.sh
 
 # none,ipset,hostlist,autohostlist

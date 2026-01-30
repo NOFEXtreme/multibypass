@@ -6,7 +6,7 @@
 # - AsusWrt Merlin: https://github.com/RMerl/asuswrt-merlin.ng
 # - AsusWrt Merlin GNUton's Builds: https://github.com/gnuton/asuswrt-merlin.ng
 #
-# VERSION=1.3
+# VERSION=1.4
 # Author: NOFEXtream
 #
 # Dependents:
@@ -48,7 +48,7 @@
 #
 #   * Replace (X) with the interface number (e.g. wg1, ov2, etc.).
 #
-#   Zapret DPI routing:
+#   Zapret control:
 #     ze / zapret-enable   - Enable zapret
 #     zd / zapret-disable  - Disable zapret
 #     zr / zapret-restart  - Restart zapret
@@ -310,6 +310,7 @@ easy_uninstall() {
               \( -name "zapret-config.sh" \
               -o -name "x3m-domains-*" \
               -o -name "zapret-hosts-*" \
+              -o -name "custom.cidr" \
               \) -exec rm -rf {} +
             log_debug "Multibypass deleted, configuration files kept."
             break
@@ -319,7 +320,7 @@ easy_uninstall() {
         esac
       done
 
-      for package in coreutils-id bind-dig ncat procps-ng-sysctl; do
+      for package in coreutils-id coreutils-sort bind-dig ncat procps-ng-sysctl dos2unix gawk; do
         while true; do
           if opkg list-installed | grep -q "^$package"; then
             echo "Do you want to uninstall $package? [y/N]"
