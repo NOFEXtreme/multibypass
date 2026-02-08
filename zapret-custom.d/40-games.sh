@@ -30,7 +30,7 @@
 #       NFQWS_GAMES_ASN_DIR="/jffs/scripts/multibypass/zapret-asn-lists"
 #     Cached files:
 #       $NFQWS_GAMES_ASN_DIR/AS<NUM>.cidr
-#     Cache is refreshed if older than 7 days.
+#     Cache is refreshed on run if older than 7 days.
 #
 # Notes:
 #  - IPv4 only (no IPv6).
@@ -64,7 +64,7 @@ NFQWS_GAMES_OPT="${NFQWS_GAMES_OPT:-
 
 # CIDR regex (IPv4/prefix)
 IP_RE='([1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])){3}'
-IP_RE_PREFIX='([0-9]|[12][0-9]|3[0-2])'
+IP_RE_PREFIX='(3[0-2]|[12][0-9]|[89])'
 CIDR_REGEX="$IP_RE/$IP_RE_PREFIX"
 
 alloc_dnum DNUM_NFQWS_GAMES

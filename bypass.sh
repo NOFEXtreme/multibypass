@@ -6,7 +6,7 @@
 # - AsusWrt Merlin: https://github.com/RMerl/asuswrt-merlin.ng
 # - AsusWrt Merlin GNUton's Builds: https://github.com/gnuton/asuswrt-merlin.ng
 #
-# VERSION=1.4
+# VERSION=1.5
 # Author: NOFEXtream
 #
 # Dependents:
@@ -26,7 +26,8 @@
 #     i  / install         - Install dependencies
 #     u  / update [ver]    - Update multibypass (optionally specify version, e.g. 'update v2025.04.10-0415')
 #     un / uninstall       - Uninstall multibypass
-#     s  / status          - Show DNS, iptables, and ipset status
+#     s  / status          - Basic status (enabled/disabled/error)
+#     s+ / status+         - Detailed status (nfqws, iptables, ip rules, ipsets)
 #     ns / nslookup        - Perform DNS lookups for x3mRouting domains files
 #
 #   Global Actions for WireGuard, OpenVPN, and zapret:
@@ -340,11 +341,48 @@ easy_uninstall() {
 }
 
 status() {
-  chains="PREROUTING INPUT FORWARD OUTPUT POSTROUTING"
-  tables="mangle nat"
+  ipt="$(iptables -t mangle -nvL 2>/dev/null)"
+
+  echo "$ipt"  | grep -qE 'match-set x3m-[^ ]+' && x3m_ipt=1 || x3m_ipt=0
+  ip rule 2>/dev/null | grep -qE 'fwmark [0-9a-fx]+/0xf000' && x3m_rule=1 || x3m_rule=0
+  echo "$ipt"  | grep -qF 'mark match ! 0x40000000/0x40000000'&& zap_ipt=1 || zap_ipt=0
+  ps 2>/dev/null | grep -q '[n]fqws' && zap_ps=1 || zap_ps=0
+
+  line() {
+    name="$1" a="$2" b="$3" miss_a="$4" miss_b="$5"
+    if [ "$a" -eq 1 ] && [ "$b" -eq 1 ]; then
+      printf "  %s: Enabled\n" "$name"
+    elif [ "$a" -eq 0 ] && [ "$b" -eq 0 ]; then
+      printf "  %s: Disabled\n" "$name"
+    else
+      miss=""
+      [ "$a" -eq 1 ] || miss="$miss$miss_a "
+      [ "$b" -eq 1 ] || miss="$miss$miss_b "
+      printf "  %s: Error (missing %s)\n" "$name" "${miss% }"
+    fi
+  }
+
+  line "x3mRouting" "$x3m_ipt" "$x3m_rule" "iptables" "iprule"
+  line "zapret"     "$zap_ipt" "$zap_ps"  "iptables" "nfqws"
+}
+
+status_detailed() {
+  printf "\n========== ZAPRET (nfqws process)\n\n"
+  pids="$(ps 2>/dev/null | awk '/[n]fqws/ {print $1}')"
+  if [ -n "$pids" ]; then
+    for pid in $pids; do
+      [ -r "/proc/$pid/cmdline" ] || continue
+      printf "  PID %s\n" "$pid"
+      cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
+      printf "    %s\n" "$cmdline" | sed 's/ --/\n      --/g'
+    done
+  else
+    printf "  nfqws not running.\n"
+  fi
 
   printf "\n========== IPTABLES \n"
-
+  chains="PREROUTING INPUT FORWARD OUTPUT POSTROUTING"
+  tables="mangle nat"
   for table in $tables; do
     printf "\n===== Table: %s\n" "$table"
     for chain in $chains; do
@@ -363,15 +401,17 @@ status() {
 
   printf "\n========== IPSETS \n\n"
   ipset list -t | sed 's/^/  /'
-  printf "\n Use this command to view specific set:\n\n ipset list <ipset-name>\n"
+  printf "\n Use this command to view specific set:\n ipset list <ipset-name>\n"
 
-  printf "\n========== /jffs/configs/dnsmasq.conf.add (ipset only)\n\n"
   if [ -s /jffs/configs/dnsmasq.conf.add ]; then
-    grep -E '^[[:space:]]*[^#]*ipset' /jffs/configs/dnsmasq.conf.add
+    out="$(grep -E '^[[:space:]]*[^#]*ipset' /jffs/configs/dnsmasq.conf.add)"
+    [ -n "$out" ] &&{
+      printf "\n========== /jffs/configs/dnsmasq.conf.add (ipset only)\n\n"
+      echo "$out"
+    }
   else
     printf "  (file is empty or missing)\n"
   fi
-
   printf "\n"
 }
 
@@ -489,6 +529,7 @@ case "$(echo "$1" | awk '{print tolower($0)}')" in
   u | update) easy_update "$2" ;;
   un | uninstall) easy_uninstall ;;
   s | status) status ;;
+  s+ | status+) status_detailed ;;
   ns | nslookup) ns_lookup ;;
   1 | e | enable | r | restart)
     x3mRouting "" enable
