@@ -1,15 +1,15 @@
 #!/bin/sh
 # __help__
 #
-# Script to selectively manage VPN routing (WireGuard/OpenVPN) by domain
+# Script to selectively manage VPN routing (WireGuard/OpenVPN) by domains/IPs/ASNs
 # and bypass DPI restrictions on ASUS routers (Merlin firmware):
 # - AsusWrt Merlin: https://github.com/RMerl/asuswrt-merlin.ng
 # - AsusWrt Merlin GNUton's Builds: https://github.com/gnuton/asuswrt-merlin.ng
 #
-# VERSION=1.5
+# VERSION=1.6
 # Author: NOFEXtream
 #
-# Dependents:
+# Dependencies:
 # - Zapret DPI Bypass tool: https://github.com/bol-van/zapret
 # - x3mRouting ~ Selective Routing for Asuswrt-Merlin Firmware: https://github.com/Xentrk/x3mRouting
 #   - Needs the modified version with WireGuard compatibility:
@@ -34,36 +34,51 @@
 #     e  / enable          - Enable all
 #     d  / disable         - Disable all
 #     r  / restart         - Restart all
-#   * For WireGuard and OpenVPN, actions are performed only if domains files exist.
 #
-#   Interface control:
+#   x3mRouting control:
 #     WireGuard X interface routing:
 #       wgXe / wgX-enable  - Enable wgX
 #       wgXd / wgX-disable - Disable wgX
 #       wgXr / wgX-restart - Restart wgX
-#
 #     OpenVPN X interface routing:
 #       ovXe / ovX-enable  - Enable ovX
 #       ovXd / ovX-disable - Disable ovX
 #       ovXr / ovX-restart - Restart ovX
-#
 #   * Replace (X) with the interface number (e.g. wg1, ov2, etc.).
+#
+#   How x3mRouting works (selective routing):
+#     - For each VPN interface (wgX / ovX) you manage three list files in $SCR_DIR:
+#         x3m-wgX-domains.txt  - domains (one per line)
+#         x3m-wgX-ips.txt      - IP/CIDR (one per line)
+#         x3m-wgX-asn.txt      - ASN (AS12345 per line)
+#       (Same naming for OpenVPN: x3m-ovX-*.txt)
+#
+#     - Edit these files to control what should go through the selected VPN.
+#       Everything not matching the lists stays on the main WAN.
+#       If a list file is missing, the script will prompt to create it on wgX/ovX enable.
+#
+#     - Global actions (enable/disable/restart) apply routing automatically:
+#       only list files that have at least one non-comment entry are processed for wgX / ovX.
+#
+#     - Per-file protocol/ports filter:
+#         Add a comment to override proto for a specific list file:
+#           # proto=tcp:80,443 udp:443,596-599,1400,5222
+#         If not present, default is:
+#           tcp:80,443 udp:443
 #
 #   Zapret control:
 #     ze / zapret-enable   - Enable zapret
 #     zd / zapret-disable  - Disable zapret
 #     zr / zapret-restart  - Restart zapret
 #
+#   How Zapret works (DPI circumvention tool):
+#     - https://github.com/bol-van/zapret/blob/master/docs/readme.en.md
+#       For better results, edit NFQWS_OPT in zapret-config.sh.
+#
 # Examples:
 #   bypass.sh wg1-enable      # Enable WireGuard wg1 interface
 #   bypass.sh zapret-restart  # Restart zapret
 #   bypass.sh disable         # Disable all
-#
-# Notes:
-#   - Ensure the paths for zapret and x3mRouting scripts are correct.
-#   - If domains files are missing, you will be prompted to create them when enabling WireGuard or OpenVPN routing.
-#   - For better DPI bypass, edit the zapret-config.sh file.
-#     Instructions can be found in the README: https://github.com/bol-van/zapret/blob/master/docs/readme.en.md
 #
 # __help__
 
@@ -433,7 +448,8 @@ x3mRouting() {
   for iface in $ifaces; do
     iface_number=$(echo "$iface" | grep -o '[0-9]*')
     [ "${iface%"$iface_number"}" = "ov" ] && iface_number=$((10 + iface_number))
-    for type in domains ips; do
+
+    for type in domains ips asn; do
       ipset="x3m-$iface-$type"
       file_path="$SCR_DIR/$ipset.txt"
 
@@ -444,13 +460,13 @@ x3mRouting() {
           sh "$X3M" ipset_name="$ipset" del=force
           log_info "End 'x3mRouting' script execution for '$ipset'."
         else
-          x3m_handle_file_creation "$ipset" "$file_path"
+          x3m_handle_file_creation "$ipset" "$file_path" "$type"
         fi
-      elif [ -n "$1" ] && [ ! -s "$file_path" ] && [ "$action" = "enable" ]; then
-        log_debug "File $file_path is empty. Add $type to it, if you want to use it." && return
-      elif [ -s "$file_path" ]; then
+      elif [ -n "$1" ] && [ "$action" = "enable" ] && ! grep -qE '^[[:space:]]*[^#[:space:]]' "$file_path"; then
+        log_debug "File $file_path is empty. Add $type to it, if you want to use it."
+      elif [ -f "$file_path" ] && grep -qE '^[[:space:]]*[^#[:space:]]' "$file_path"; then
         tr -d '\n' <"$file_path" | grep -q "$(printf '\r')" && dos2unix "$file_path"
-        x3m_handle_ipset_routing "$ipset" "$file_path" "$iface" "$type"
+        x3m_handle_ipset_routing "$ipset" "$file_path" "$iface" "$type" "$action" "$iface_number"
       fi
     done
   done
@@ -459,13 +475,14 @@ x3mRouting() {
 x3m_handle_file_creation() {
   ipset="$1"
   file_path="$2"
+  type="$3"
 
   while true; do
     echo "Do you want to create the file $file_path? [Y/n]:"
     read -r option
     case "${option:-y}" in
       [yY][eE][sS] | [yY])
-        touch "$file_path" && chmod 644 "$file_path"
+        printf '# proto=tcp:80,443 udp:443\n' > "$file_path" && chmod 644 "$file_path"
         log_debug "File $file_path created. Add $type to it, if you want to use it." && return
         ;;
       [nN][oO] | [nN]) log_debug "File not created. Exiting." && return ;;
@@ -479,17 +496,38 @@ x3m_handle_ipset_routing() {
   file_path="$2"
   iface="$3"
   type="$4"
+  action="$5"
+  iface_number="$6"
 
   log_info "Starting 'x3mRouting' script execution."
   log_debug "Disabling '$ipset $type' routing if exist."
   sh "$X3M" ipset_name="$ipset" del=force
 
   if [ "$action" = "enable" ]; then
-    log_debug "Enabling '$iface' routing for $ipset."
-    param_type="$([ "$type" = "domains" ] && echo "dnsmasq_file" || echo "ip_file")"
-    sh "$X3M" 0 "$iface_number" "$ipset" "$param_type"="$file_path" proto="tcp:80,443 udp:443"
-    sh "$X3M" server=3 ipset_name="$ipset" proto="tcp:80,443 udp:443"
+    log_debug "Enabling '$ipset' routing."
+
+    # proto from "# proto=..." comment, else default
+    proto="$(grep -m1 -E '^[[:space:]]*#[[:space:]]*proto=' "$file_path" \
+      | sed -E 's/^[[:space:]]*#[[:space:]]*proto=//')"
+    [ -z "$proto" ] && proto='tcp:80,443 udp:443'
+
+    # clean list file for x3mRouting.sh (strip comments/blank lines)
+    clean_file="/tmp/${ipset}.clean.$$"
+    sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$file_path" \
+      | grep -v -E '^[[:space:]]*$' > "$clean_file"
+
+    if [ "$type" = "asn" ]; then
+      asnum="$(tr '\n' ',' < "$clean_file" | sed 's/,$//')"
+      sh "$X3M" 0 "$iface_number" "$ipset" asnum="$asnum" proto="$proto"
+    else
+      param_type="$([ "$type" = "domains" ] && echo "dnsmasq_file" || echo "ip_file")"
+      sh "$X3M" 0 "$iface_number" "$ipset" "$param_type"="$clean_file" proto="$proto"
+    fi
+
+    sh "$X3M" server=3 ipset_name="$ipset" proto="$proto"
+    rm -f "$clean_file"
   fi
+
   log_info "End 'x3mRouting' script execution."
 }
 
