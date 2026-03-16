@@ -25,27 +25,16 @@ jobs:
           - arch: arm64
             tool: aarch64-unknown-linux-musl
           - arch: arm
-            tool: arm-unknown-linux-musleabi
-          # - arch: armhf
-          #   tool: arm-unknown-linux-musleabihf
-          # - arch: armv7
-          #   tool: armv7-unknown-linux-musleabi
+            tool: armv6-unknown-linux-musleabi
           - arch: armv7hf
             tool: armv7-unknown-linux-musleabihf
-          # - arch: mips64el
-          #   tool: mips64el-unknown-linux-musl
+            repo: 'spvkgn/musl-cross'
           - arch: mips64
             tool: mips64-unknown-linux-musl
-          # - arch: mipsel
-          #   tool: mipsel-unknown-linux-musl
           - arch: mipselsf
             tool: mipsel-unknown-linux-muslsf
-          # - arch: mips
-          #   tool: mips-unknown-linux-musl
           - arch: mipssf
             tool: mips-unknown-linux-muslsf
-          # - arch: ppc64
-          #   tool: powerpc64-unknown-linux-musl
           - arch: ppc
             tool: powerpc-unknown-linux-musl
           - arch: x86
@@ -65,14 +54,14 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 1
-      #          path: zapret
+#          path: zapret
 
       - name: Set up build tools
         env:
           ARCH: ${{ matrix.arch }}
           TOOL: ${{ matrix.tool }}
-          REPO: ${{ matrix.arch == 'lexra' && matrix.repo || 'spvkgn/musl-cross' }}
-          DIR: ${{ matrix.arch == 'lexra' && matrix.dir || matrix.tool }}
+          REPO: ${{ matrix.repo || 'bol-van/musl-cross' }}
+          DIR: ${{ matrix.dir || matrix.tool }}
         run: |
           if [[ "$ARCH" == lexra ]]; then
             sudo dpkg --add-architecture i386
@@ -104,7 +93,18 @@ jobs:
           export STRIP=$TARGET-strip
           export PKG_CONFIG_PATH=$DEPS_DIR/lib/pkgconfig
           export STAGING_DIR=$RUNNER_TEMP
-          export CFLAGS="$([ "$ARCH" = "armv7hf" ] && echo "-march=armv7-a -mfpu=neon-vfpv4 -mtune=cortex-a7")"
+          OPTIMIZE=-Oz
+          case "$ARCH" in
+            lexra)
+              OPTIMIZE=-Os
+              ;;
+            arm)
+              CPU="-mcpu=arm1176jzf-s -mthumb"
+              ;;
+            armv7hf)
+              CPU="-mcpu=cortex-a7 -mfpu=neon-vfpv4 -mthumb"
+              ;;
+          esac
 
           # netfilter libs
           wget -qO- https://www.netfilter.org/pub/libnfnetlink/libnfnetlink-1.0.2.tar.bz2 | tar -xj
@@ -114,7 +114,7 @@ jobs:
           for i in libmnl libnfnetlink libnetfilter_queue ; do
             (
               cd $i-*
-              CFLAGS="-Os -flto=auto $CFLAGS" \
+              CFLAGS="$OPTIMIZE $CPU -flto=auto $CFLAGS" \
               ./configure --prefix= --host=$TARGET --enable-static --disable-shared --disable-dependency-tracking
               make install -j$(nproc) DESTDIR=$DEPS_DIR
             )
@@ -126,7 +126,7 @@ jobs:
             xargs -I{} wget -qO- https://github.com/madler/zlib/archive/refs/tags/{}.tar.gz | tar -xz
           (
             cd zlib-*
-            CFLAGS="-Os -flto=auto $CFLAGS" \
+            CFLAGS="$OPTIMIZE $CPU -flto=auto $CFLAGS" \
             ./configure --prefix= --static
             make install -j$(nproc) DESTDIR=$DEPS_DIR
           )
@@ -137,8 +137,9 @@ jobs:
           install -Dm644 -t $DEPS_DIR/include/sys /usr/include/x86_64-linux-gnu/sys/queue.h /usr/include/sys/capability.h
 
           # zapret
-          CFLAGS="-DZAPRET_GH_VER=${{ github.ref_name }} -DZAPRET_GH_HASH=${{ github.sha }} -static-libgcc -static -I$DEPS_DIR/include $CFLAGS" \
-          LDFLAGS="-L$DEPS_DIR/lib" \
+          OPTIMIZE=$OPTIMIZE \
+          CFLAGS="-DZAPRET_GH_VER=${{ github.ref_name }} -DZAPRET_GH_HASH=${{ github.sha }} -static-libgcc -static $CPU -I$DEPS_DIR/include $CFLAGS" \
+          LDFLAGS="-L$DEPS_DIR/lib $LDFLAGS" \
           make -C ${{ env.zapret_dir }} -j$(nproc)
           tar -C ${{ env.zapret_dir }}/binaries/my -cJf zapret-linux-$ARCH.tar.xz .
 
@@ -228,7 +229,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 1
-      #          path: zapret
+#          path: zapret
 
       - name: Set up MinGW
         uses: msys2/setup-msys2@v2
@@ -340,7 +341,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 1
-      #          path: zapret
+#          path: zapret
 
       - name: Build
         env:
@@ -358,6 +359,14 @@ jobs:
           export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
           export STRIP=$TOOLCHAIN/bin/llvm-strip
           export PKG_CONFIG_PATH=$DEPS_DIR/lib/pkgconfig
+          case "$ABI" in
+            armeabi-v7a)
+              CPU="-mthumb"
+              ;;
+            arm64-v8a)
+              PAGESIZE="-Wl,-z,max-page-size=16384"
+              ;;
+          esac
 
           # netfilter libs
           wget -qO- https://www.netfilter.org/pub/libnfnetlink/libnfnetlink-1.0.2.tar.bz2 | tar -xj
@@ -368,7 +377,7 @@ jobs:
           for i in libmnl libnfnetlink libnetfilter_queue ; do
             (
               cd $i-*
-              CFLAGS="-Os -flto=auto -Wno-implicit-function-declaration" \
+              CFLAGS="$CPU -Os -flto=auto -Wno-implicit-function-declaration" \
               ./configure --prefix= --host=$TARGET --enable-static --disable-shared --disable-dependency-tracking
               make install -j$(nproc) DESTDIR=$DEPS_DIR
             )
@@ -376,8 +385,8 @@ jobs:
           done
 
           # zapret
-          CFLAGS="-DZAPRET_GH_VER=${{ github.ref_name }} -DZAPRET_GH_HASH=${{ github.sha }} -I$DEPS_DIR/include" \
-          LDFLAGS="-L$DEPS_DIR/lib" \
+          CFLAGS="$CPU -DZAPRET_GH_VER=${{ github.ref_name }} -DZAPRET_GH_HASH=${{ github.sha }} -I$DEPS_DIR/include" \
+          LDFLAGS="-L$DEPS_DIR/lib $PAGESIZE" \
           make -C ${{ env.zapret_dir }} android -j$(nproc)
 
           # strip unwanted ELF sections to prevent warnings on old Android versions
@@ -402,19 +411,26 @@ jobs:
     runs-on: ubuntu-latest
     env:
       repo_dir: zapret-${{ github.ref_name }}
+      src_dir: src
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          path: ${{ env.zapret_dir }}
+          path: ${{ env.src_dir }}
           submodules: recursive
           fetch-depth: 1
+
+      - name: Prepare release tree
+        run: |
+          mkdir -p "${{ env.repo_dir }}"
+          shopt -s dotglob
+          cp -a "${{ env.src_dir }}/${{ env.zapret_dir }}/." "${{ env.repo_dir }}/"
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
         id: bins
         with:
-          path: ${{ env.zapret_dir }}/binaries
+          path: ${{ env.repo_dir }}/binaries
           pattern: zapret-*
 
       - name: Install upx
@@ -426,38 +442,38 @@ jobs:
       - name: Prepare binaries
         shell: bash
         run: |
-          cd ${{ steps.bins.outputs.download-path }}
+          cd "${{ steps.bins.outputs.download-path }}"
           run_upx() {
-            upx --best --lzma $@ || true
+            upx --best --lzma "$@" || true
           }
           run_dir() {
-            for f in $dir/* ; do
+            for f in "$dir"/*; do
               # extract binaries
-              case $f in
-                *.tar.xz )
-                  tar -C $dir -xvf $f && rm $f
-                  if [[ $dir == *-linux-x86_64 ]]; then
-                    tar -C $dir -czvf $dir/tpws_wsl.tgz tpws
-                    run_upx $dir/*
-                  elif [[ $dir =~ linux ]] && [[ $dir != *-linux-mips64 ]] && [[ $dir != *-linux-lexra ]]; then
-                    run_upx $dir/*
+              case "$f" in
+                *.tar.xz)
+                  tar -C "$dir" -xvf "$f" && rm -f "$f"
+                  if [[ "$dir" == *-linux-x86_64 ]]; then
+                    tar -C "$dir" -czvf "$dir/tpws_wsl.tgz" tpws
+                    run_upx "$dir"/*
+                  elif [[ "$dir" =~ linux ]] && [[ "$dir" != *-linux-mips64 ]] && [[ "$dir" != *-linux-lexra ]]; then
+                    run_upx "$dir"/*
                   fi
                   ;;
-                *.zip )
-                  unzip $f -d $dir && rm $f
-                  if [[ $dir =~ win ]]; then
-                    chmod -x $dir/*
+                *.zip)
+                  unzip "$f" -d "$dir" && rm -f "$f"
+                  if [[ "$dir" =~ win ]]; then
+                    chmod -x "$dir"/*
                   fi
                   ;;
               esac
             done
-            mv $dir $1
+            mv "$dir" "$1"
           }
-          for dir in * ; do
-            if [ -d $dir ]; then
+          for dir in *; do
+            if [ -d "$dir" ]; then
               echo "Processing $dir"
               ls -l $dir
-              case $dir in
+              case "$dir" in
                 *-android-arm64-v8a )   run_dir android-arm64 ;;
                 *-android-armeabi-v7a ) run_dir android-arm ;;
                 *-android-x86 )         run_dir android-x86 ;;
@@ -483,17 +499,17 @@ jobs:
 
       - name: Create release bundles
         run: |
-          rm -rf ${{ env.zapret_dir }}/.git*
-          find ${{ env.zapret_dir }}/binaries -type f -exec sha256sum {} \; >sha256sum.txt
-          tar --owner=0 --group=0 -czf ${{ env.zapret_dir }}.tar.gz ${{ env.zapret_dir }}
-          zip -qr ${{ env.zapret_dir }}.zip ${{ env.zapret_dir }}
+          rm -rf "${{ env.repo_dir }}/.git*"
+          find "${{ env.repo_dir }}/binaries" -type f -exec sha256sum {} \; >sha256sum.txt
+          tar --owner=0 --group=0 -czf "${{ env.repo_dir }}.tar.gz" "${{ env.repo_dir }}"
+          zip -qr "${{ env.repo_dir }}.zip" "${{ env.repo_dir }}"
           (
-            cd ${{ env.repo_dir }}
+            cd "${{ env.repo_dir }}"
             rm -rf binaries/{android*,freebsd*,mac*,win*,x86_64/tpws_wsl.tgz} \
-                   init.d/{openrc,macos,pfsense,runit,s6,systemd} \
+                   init.d/{openrc,macos,pfsense,runit,s6,systemd,windivert.filter.examples} \
                    tpws nfq ip2net mdig docs files/huawei Makefile
           )
-          tar --owner=0 --group=0 -czf ${{ env.zapret_dir }}-openwrt-embedded.tar.gz ${{ env.zapret_dir }}
+          tar --owner=0 --group=0 -czf "${{ env.repo_dir }}-openwrt-embedded.tar.gz" "${{ env.repo_dir }}"
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
@@ -504,6 +520,7 @@ jobs:
           body: |
             ### zapret ${{ github.ref_name }}
           files: |
-            zapret*.tar.gz
-            zapret*.zip
+            ${{ env.repo_dir }}.tar.gz
+            ${{ env.repo_dir }}.zip
+            ${{ env.repo_dir }}-openwrt-embedded.tar.gz
             sha256sum.txt

@@ -16,11 +16,23 @@ env:
   zapret_dir: "core/zapret"
 
 jobs:
-  build-linux:
-    name: Linux ${{ matrix.arch }}
+  generate-tag:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.generate_tag.outputs.tag }}
+    steps:
+      - name: Generate tag name
+        id: generate_tag
+        run: |
+          TAG=v$(date +'%Y.%m.%d-%H%M')
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+  build-linux:
+    needs: generate-tag
+    env:
+      TAG: ${{ needs.generate-tag.outputs.tag }}
+    name: Linux ${{ matrix.arch }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -28,9 +40,10 @@ jobs:
           - arch: arm64
             tool: aarch64-unknown-linux-musl
           - arch: arm
-            tool: arm-unknown-linux-musleabi
+            tool: armv6-unknown-linux-musleabi
           - arch: armv7hf
             tool: armv7-unknown-linux-musleabihf
+            repo: 'spvkgn/musl-cross'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,27 +51,17 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Generate tag name
-        id: generate_tag
-        run: |
-          TAG=v$(date +'%Y.%m.%d-%H%M')
-          echo "TAG=$TAG" >> $GITHUB_ENV
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-
-      - name: Get zapret submodule version
-        run: |
-          cd ${{ env.zapret_dir }}
-          zapret_version=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse HEAD)
-          echo "zapret_version=$zapret_version" >> $GITHUB_ENV
-
       - name: Set up build tools
         env:
-          REPO: "spvkgn/musl-cross"
+          ARCH: ${{ matrix.arch }}
           TOOL: ${{ matrix.tool }}
+          REPO: ${{ matrix.repo || 'bol-van/musl-cross' }}
         run: |
-          sudo apt update -qq && sudo apt install -y libcap-dev
+          sudo apt update -qq
+          sudo apt install -y libcap-dev
+          URL=https://github.com/$REPO/releases/download/latest/$TOOL.tar.xz
           mkdir -p $HOME/tools
-          wget -qO- https://github.com/$REPO/releases/download/latest/$TOOL.tar.xz | tar -C $HOME/tools -xJ || exit 1
+          wget -qO- $URL | tar -C $HOME/tools -xJ || exit 1
           [ -d "$HOME/tools/$TOOL/bin" ] && echo "$HOME/tools/$TOOL/bin" >> $GITHUB_PATH
 
       - name: Build
@@ -74,7 +77,16 @@ jobs:
           export NM=$TARGET-nm
           export STRIP=$TARGET-strip
           export PKG_CONFIG_PATH=$DEPS_DIR/lib/pkgconfig
-          export CFLAGS="$CFLAGS $([ "$ARCH" = "armv7hf" ] && echo "-march=armv7-a -mfpu=neon-vfpv4 -mtune=cortex-a7")"
+          export STAGING_DIR=$RUNNER_TEMP
+          OPTIMIZE=-Oz
+          case "$ARCH" in
+            arm)
+              CPU="-mcpu=arm1176jzf-s -mthumb"
+              ;;
+            armv7hf)
+              CPU="-mcpu=cortex-a7 -mfpu=neon-vfpv4 -mthumb"
+              ;;
+          esac
 
           # netfilter libs
           wget -qO- https://www.netfilter.org/pub/libnfnetlink/libnfnetlink-1.0.2.tar.bz2 | tar -xj
@@ -84,7 +96,7 @@ jobs:
           for i in libmnl libnfnetlink libnetfilter_queue ; do
             (
               cd $i-*
-              CFLAGS="-Os -flto=auto" \
+              CFLAGS="$OPTIMIZE $CPU -flto=auto $CFLAGS" \
               ./configure --prefix= --host=$TARGET --enable-static --disable-shared --disable-dependency-tracking
               make install -j$(nproc) DESTDIR=$DEPS_DIR
             )
@@ -92,11 +104,11 @@ jobs:
           done
 
           # zlib
-          gh api repos/madler/zlib/releases/latest --jq ".tag_name" |\
+          gh api repos/madler/zlib/releases/latest --jq '.tag_name' |\
             xargs -I{} wget -qO- https://github.com/madler/zlib/archive/refs/tags/{}.tar.gz | tar -xz
           (
             cd zlib-*
-            CFLAGS="-Os -flto=auto" \
+            CFLAGS="$OPTIMIZE $CPU -flto=auto $CFLAGS" \
             ./configure --prefix= --static
             make install -j$(nproc) DESTDIR=$DEPS_DIR
           )
@@ -105,8 +117,9 @@ jobs:
           install -Dm644 -t $DEPS_DIR/include/sys /usr/include/x86_64-linux-gnu/sys/queue.h /usr/include/sys/capability.h
 
           # zapret
-          CFLAGS="$CFLAGS -DZAPRET_GH_VER=${{ env.repo_name }}-${{ env.TAG }} -DZAPRET_GH_HASH=${{ github.sha }} -static-libgcc -static -I$DEPS_DIR/include" \
-          LDFLAGS="-L$DEPS_DIR/lib" \
+          OPTIMIZE=$OPTIMIZE \
+          CFLAGS="-DZAPRET_GH_VER=${{ env.repo_name }}-$TAG -DZAPRET_GH_HASH=${{ github.sha }} -static-libgcc -static $CPU -I$DEPS_DIR/include $CFLAGS" \
+          LDFLAGS="-L$DEPS_DIR/lib $LDFLAGS" \
           make -C ${{ env.zapret_dir }} -j$(nproc)
           tar -C ${{ env.zapret_dir }}/binaries/my -cJf zapret-linux-$ARCH.tar.xz .
 
@@ -118,25 +131,18 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: build-linux
+    needs: [generate-tag, build-linux]
+    env:
+      TAG: ${{ needs.generate-tag.outputs.tag }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ needs.build-linux.outputs.tag }}
     steps:
       - name: Checkout with submodules
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
-
-      - name: Create Git tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ env.TAG }}
-          git push origin ${{ env.TAG }}
 
       - name: Get zapret commit hash
         id: zapret_commit
@@ -151,6 +157,13 @@ jobs:
           cd $GITHUB_WORKSPACE/core/x3mRouting
           x3mrouting_commit=$(git rev-parse HEAD)
           echo "x3mrouting_commit=$x3mrouting_commit" >> $GITHUB_ENV
+
+      - name: Create Git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ env.TAG }}
+          git push origin ${{ env.TAG }}
 
       - name: Cleanup files
         shell: bash
@@ -182,7 +195,9 @@ jobs:
             "files fake" \
             "init.d sysv"; do
             set -- $item # Parse into $1 and $2
-            find "${{ env.zapret_dir }}/$1" -mindepth 1 -maxdepth 1 ! -name "$2" -exec rm -rf {} +
+            if [ -d "${{ env.zapret_dir }}/$1" ]; then
+              find "${{ env.zapret_dir }}/$1" -mindepth 1 -maxdepth 1 ! -name "$2" -exec rm -rf {} +
+            fi
           done
 
       - name: Download artifacts
@@ -226,7 +241,7 @@ jobs:
       - name: Package ${{ env.repo_name }}
         shell: bash
         run: |
-          cd ../
+          cd "$GITHUB_WORKSPACE/.."
           find ${{ env.repo_name }}/${{ env.zapret_dir }}/binaries -type f -exec sha256sum {} \; >sha256sum.txt
           tar --owner=0 --group=0 -czf "${{ env.repo_name }}.tar.gz" "${{ env.repo_name }}"
           zip -qr "${{ env.repo_name }}.zip" "${{ env.repo_name }}"
@@ -241,7 +256,7 @@ jobs:
           name: Build ${{ env.TAG }}
           tag_name: ${{ env.TAG }}
           body: |
-            ### Auto build with latest [zapret](https://github.com/bol-van/zapret/tree/${{ env.zapret_commit }}) and [x3mRouting.sh](https://github.com/Xentrk/x3mRouting/tree/${{ env.x3mrouting_commit }})
+            ### Built with [zapret](https://github.com/bol-van/zapret/tree/${{ env.zapret_commit }}) and [x3mRouting.sh](https://github.com/NOFEXtreme/x3mRouting/tree/${{ env.x3mrouting_commit }})
           files: |
             ../${{ env.repo_name }}.zip
             ../${{ env.repo_name }}.tar.gz

@@ -6,7 +6,7 @@
 # - AsusWrt Merlin: https://github.com/RMerl/asuswrt-merlin.ng
 # - AsusWrt Merlin GNUton's Builds: https://github.com/gnuton/asuswrt-merlin.ng
 #
-# VERSION=1.6
+# VERSION=1.7
 # Author: NOFEXtream
 #
 # Dependencies:
@@ -22,28 +22,28 @@
 #
 # Options:
 #   General:
-#     h  / help            - Show help
-#     i  / install         - Install dependencies
-#     u  / update [ver]    - Update multibypass (optionally specify version, e.g. 'update v2025.04.10-0415')
-#     un / uninstall       - Uninstall multibypass
-#     s  / status          - Basic status (enabled/disabled/error)
-#     s+ / status+         - Detailed status (nfqws, iptables, ip rules, ipsets)
-#     ns / nslookup        - Perform DNS lookups for x3mRouting domains files
+#     -h  / --help             - Show help
+#     -i  / --install          - Install dependencies
+#     -u  / --update [ver]     - Update multibypass (optionally specify version, e.g. '--update v2025.04.10-0415')
+#     -un / --uninstall        - Uninstall multibypass
+#     -s  / --status           - Basic status (enabled/disabled/error)
+#     -sf / --status-full      - Detailed status (nfqws, iptables, ip rules, ipsets)
+#     -ns / --nslookup         - Perform DNS lookups for x3mRouting domains files
 #
-#   Global Actions for WireGuard, OpenVPN, and zapret:
-#     e  / enable          - Enable all
-#     d  / disable         - Disable all
-#     r  / restart         - Restart all
+#   Global actions for WireGuard, OpenVPN, and zapret:
+#     -e / --enable            - Enable all
+#     -d / --disable           - Disable all
+#     -r / --restart           - Restart all
 #
 #   x3mRouting control:
 #     WireGuard X interface routing:
-#       wgXe / wgX-enable  - Enable wgX
-#       wgXd / wgX-disable - Disable wgX
-#       wgXr / wgX-restart - Restart wgX
+#       -wgXe / --wgX-enable   - Enable wgX
+#       -wgXd / --wgX-disable  - Disable wgX
+#       -wgXr / --wgX-restart  - Restart wgX
 #     OpenVPN X interface routing:
-#       ovXe / ovX-enable  - Enable ovX
-#       ovXd / ovX-disable - Disable ovX
-#       ovXr / ovX-restart - Restart ovX
+#       -ovXe / --ovX-enable   - Enable ovX
+#       -ovXd / --ovX-disable  - Disable ovX
+#       -ovXr / --ovX-restart  - Restart ovX
 #   * Replace (X) with the interface number (e.g. wg1, ov2, etc.).
 #
 #   How x3mRouting works (selective routing):
@@ -67,18 +67,18 @@
 #           tcp:80,443 udp:443
 #
 #   Zapret control:
-#     ze / zapret-enable   - Enable zapret
-#     zd / zapret-disable  - Disable zapret
-#     zr / zapret-restart  - Restart zapret
+#     -ze / --zapret-enable    - Enable zapret
+#     -zd / --zapret-disable   - Disable zapret
+#     -zr / --zapret-restart   - Restart zapret
 #
 #   How Zapret works (DPI circumvention tool):
 #     - https://github.com/bol-van/zapret/blob/master/docs/readme.en.md
 #       For better results, edit NFQWS_OPT in zapret-config.sh.
 #
 # Examples:
-#   bypass.sh wg1-enable      # Enable WireGuard wg1 interface
-#   bypass.sh zapret-restart  # Restart zapret
-#   bypass.sh disable         # Disable all
+#   bypass.sh --wg1-enable      # Enable WireGuard wg1 interface
+#   bypass.sh --zapret-restart  # Restart zapret
+#   bypass.sh --disable         # Disable all
 #
 # __help__
 
@@ -314,7 +314,7 @@ easy_uninstall() {
     [yY][eE][sS] | [yY])
       log_debug "Disabling 'zapret' and 'x3mRouting'."
       zapret disable
-      x3mRouting "" disable
+      x3mRouting "" uninstall
       log_debug "Proceeding with uninstallation..."
       log_info "Do you want to save zapret-config.sh and domain files in /jffs/scripts/multibypass? [Y/n]"
       read -r option
@@ -457,7 +457,7 @@ x3mRouting() {
         if [ "$action" = "disable" ]; then
           log_info "Starting 'x3mRouting' script execution for disabling."
           log_debug "Disabling '$iface $type' routing."
-          sh "$X3M" ipset_name="$ipset" del=force
+          sh "$X3M" ipset_name="$ipset" del
           log_info "End 'x3mRouting' script execution for '$ipset'."
         else
           x3m_handle_file_creation "$ipset" "$file_path" "$type"
@@ -501,7 +501,7 @@ x3m_handle_ipset_routing() {
 
   log_info "Starting 'x3mRouting' script execution."
   log_debug "Disabling '$ipset $type' routing if exist."
-  sh "$X3M" ipset_name="$ipset" del=force
+  sh "$X3M" ipset_name="$ipset" "$([ "$action" = 'uninstall' ] && echo 'del=force' || echo 'del')"
 
   if [ "$action" = "enable" ]; then
     log_debug "Enabling '$ipset' routing."
@@ -561,75 +561,77 @@ zapret() {
   log_info "End of 'zapret' script execution."
 }
 
-case "$(echo "$1" | awk '{print tolower($0)}')" in
-  h | help) help ;;
-  i | install) easy_install ;;
-  u | update) easy_update "$2" ;;
-  un | uninstall) easy_uninstall ;;
-  s | status) status ;;
-  s+ | status+) status_detailed ;;
-  ns | nslookup) ns_lookup ;;
-  1 | e | enable | r | restart)
+case "$(printf '%s' "$1" | awk '{print tolower($0)}')" in
+  -h | --help | h | help) help ;;
+  -i | --install | i | install) easy_install ;;
+  -u | --update | u | update) easy_update "$2" ;;
+  -un | --uninstall | un | uninstall) easy_uninstall ;;
+  -s | --status | s | status) status ;;
+  -sf | --status-full | s+ | status+) status_detailed ;;
+  -ns | --nslookup | ns | nslookup) ns_lookup ;;
+  1 | -e | --enable | -r | --restart | e | enable | r | restart)
     x3mRouting "" enable
     zapret enable
     ;;
-  0 | d | disable)
+  0 | -d | --disable | d | disable)
     x3mRouting "" disable
     zapret disable
     ;;
-  wg[1-5] | wg[1-5]e | wg[1-5]-enable | wg[1-5]r | wg[1-5]-restart | \
+  -wg[1-5]e | --wg[1-5]-enable | -wg[1-5]r | --wg[1-5]-restart | \
+    -ov[1-5]e | --ov[1-5]-enable | -ov[1-5]r | --ov[1-5]-restart | \
+    wg[1-5] | wg[1-5]e | wg[1-5]-enable | wg[1-5]r | wg[1-5]-restart | \
     ov[1-5] | ov[1-5]e | ov[1-5]-enable | ov[1-5]r | ov[1-5]-restart)
-    iface="$1"
-    echo "$iface" | grep -qE '[^0-9]$' && iface="${iface%?}"
-    iface="${iface%-*}"
+    iface="$(printf '%s\n' "$1" | grep -oE '(wg|ov)[1-5]')"
     x3mRouting "$iface" enable
     ;;
-  wg[1-5]d | ov[1-5]d | wg[1-5]-disable | ov[1-5]-disable)
-    iface="${1%?}"
-    iface="${iface%-*}"
+  -wg[1-5]d | --wg[1-5]-disable | -ov[1-5]d | --ov[1-5]-disable | \
+    wg[1-5]d | ov[1-5]d | wg[1-5]-disable | ov[1-5]-disable)
+    iface="$(printf '%s\n' "$1" | grep -oE '(wg|ov)[1-5]')"
     x3mRouting "$iface" disable
     ;;
-  z1 | ze | z-enable | zapret-enable | zr | z-restart | zapret-restart) zapret enable ;;
-  z0 | zd | z-disable | zapret-disable) zapret disable ;;
+  -ze | --zapret-enable | -zr | --zapret-restart | z1 | ze | z-enable | zapret-enable | zr | z-restart | zapret-restart) zapret enable ;;
+  -zd | --zapret-disable | z0 | zd | z-disable | zapret-disable) zapret disable ;;
   *)
     log_debug "
     Invalid option selected. Use one of the following:
 
     ------------------------------------
     General:
-      'h'  or 'help'                 - Show full help
-      'i'  or 'install'              - Install all dependencies
-      'u'  or 'update [version]'     - Update multibypass (optionally specify version, e.g. 'update v2025.04.10-0415')
-      'un' or 'uninstall'            - Uninstall multibypass
-      's'  or 'status'               - Show current status
-      'ns' or 'nslookup'             - Perform DNS lookups for x3m files
+      '-h'  or '--help'                 - Show full help
+      '-i'  or '--install'              - Install all dependencies
+      '-u'  or '--update [version]'     - Update multibypass (optionally specify version, e.g. 'update v2025.04.10-0415')
+      '-un' or '--uninstall'            - Uninstall multibypass
+      '-s'  or '--status'               - Show current status
+      '-sf' or '--status-full'          - Show detailed status
+      '-ns' or '--nslookup'             - Perform DNS lookups for x3m files
 
     ------------------------------------
     Global actions:
-      'e' or 'enable'                - Enable all (wgX, ovX and zapret)
-      'd' or 'disable'               - Disable all (wgX, ovX and zapret)
+      '-e' or '--enable'                - Enable all (wgX, ovX and zapret)
+      '-d' or '--disable'               - Disable all (wgX, ovX and zapret)
+      '-r' or '--restart'               - Restart all (same behavior as enable)
 
      * For WireGuard and OpenVPN, actions are performed only if domains files exist.
 
     ------------------------------------
     x3mRouting control:
       WireGuard Interfaces:
-        'wg(X)e' or 'wg(X)-enable'   - Enable
-        'wg(X)d' or 'wg(X)-disable'  - Disable
-        'wg(X)r' or 'wg(X)-restart'  - Restart
+        '-wg(X)e' or '--wg(X)-enable'   - Enable
+        '-wg(X)d' or '--wg(X)-disable'  - Disable
+        '-wg(X)r' or '--wg(X)-restart'  - Restart
 
       OpenVPN Interfaces:
-        'ov(X)e' or 'ov(X)-enable'   - Enable
-        'ov(X)d' or 'ov(X)-disable'  - Disable
-        'ov(X)r' or 'ov(X)-restart'  - Restart
+        '-ov(X)e' or '--ov(X)-enable'   - Enable
+        '-ov(X)d' or '--ov(X)-disable'  - Disable
+        '-ov(X)r' or '--ov(X)-restart'  - Restart
 
       * Replace (X) with the interface number (e.g. wg1, ov2, etc.).
 
     ------------------------------------
     Zapret control:
-      'ze' or 'zapret-enable'        - Enable zapret
-      'zd' or 'zapret-disable'       - Disable zapret
-      'zr' or 'zapret-restart'       - Restart zapret
+      '-ze' or '--zapret-enable'        - Enable zapret
+      '-zd' or '--zapret-disable'       - Disable zapret
+      '-zr' or '--zapret-restart'       - Restart zapret
     "
     exit 1
     ;;

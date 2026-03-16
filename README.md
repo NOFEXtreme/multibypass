@@ -1,6 +1,6 @@
 # Multibypass
 
-**Multibypass** is a project that easily integrates [zapret](https://github.com/bol-van/zapret) for DPI bypass and [x3mRouting](https://github.com/NOFEXtreme/x3mRouting/blob/master/x3mRouting.sh) for domain-based VPN routing on [ASUSWRT-Merlin](https://github.com/gnuton/asuswrt-merlin.ng).
+**Multibypass** is a project that easily integrates [zapret](https://github.com/bol-van/zapret) for DPI bypass and [x3mRouting](https://github.com/NOFEXtreme/x3mRouting/blob/master/x3mRouting.sh) for selective VPN routing by domains, IPs/CIDRs, and ASNs on [ASUSWRT-Merlin](https://github.com/gnuton/asuswrt-merlin.ng).
 
 Dependencies:
 
@@ -18,23 +18,23 @@ Tested on models:
 ### Quick Start
 
 1. Login to your router via ssh.
-2. Download the latest [releases](https://github.com/NOFEXtreme/multibypass/releases). <sub>( *auto-extract to: `/jffs/scripts/multibypass`*)</sub>
+2. Download the latest [release](https://github.com/NOFEXtreme/multibypass/releases). <sub>( *auto-extract to: `/jffs/scripts/multibypass`*)</sub>
    ```bash
    curl -fsSL https://github.com/NOFEXtreme/multibypass/releases/latest/download/multibypass.tar.gz | tar -xzv -C /jffs/scripts/
    ```
 3. Run the installation:
     ```bash
-    sh /jffs/scripts/multibypass/bypass.sh install
+    sh /jffs/scripts/multibypass/bypass.sh --install
     ```
 4. For additional commands and options, view the help menu:
     ```bash
-    sh /jffs/scripts/multibypass/bypass.sh help
+    sh /jffs/scripts/multibypass/bypass.sh --help
     ```
 
 **Notes:**
 
-- For x3mRouting, if domains files are missing, you will be prompted to create them when enabling WireGuard or OpenVPN routing.
-- For better DPI bypass, edit the zapret-config.sh file. Instructions can be found here: [Zapret README](https://github.com/bol-van/zapret/blob/master/docs/readme.en.md).
+- For x3mRouting, if list files are missing, you will be prompted to create them when enabling WireGuard or OpenVPN routing.
+- For better DPI bypass, edit the `zapret-config.sh` file. Instructions can be found here: [Zapret README](https://github.com/bol-van/zapret/blob/master/docs/readme.en.md).
 
 ---
 
@@ -43,9 +43,9 @@ Tested on models:
 1. Login to your router via ssh.
 2. Run the update:
    ```bash
-   sh /jffs/scripts/multibypass/bypass.sh update
+   sh /jffs/scripts/multibypass/bypass.sh --update
    ```
-   *will automatically download and install the latest version.*
+   *automatically download and install the latest version.*
 
    > Files in `zapret-custom.d` are always overwritten during update. If you’ve modified them, back up or rename them beforehand.  
 
@@ -58,9 +58,9 @@ Tested on models:
 1. Login to your router via ssh.
 2. Run the uninstallation process:
    ```bash
-   sh /jffs/scripts/multibypass/bypass.sh uninstall
+   sh /jffs/scripts/multibypass/bypass.sh --uninstall
    ```
-   *will ask for confirmation and if you want to save the config files.*
+   *ask for confirmation and whether you want to keep the config files.*
 
 ---
 
