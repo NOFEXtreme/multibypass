@@ -6,7 +6,7 @@
 # - AsusWrt Merlin: https://github.com/RMerl/asuswrt-merlin.ng
 # - AsusWrt Merlin GNUton's Builds: https://github.com/gnuton/asuswrt-merlin.ng
 #
-# VERSION=1.7
+# VERSION=1.7.1
 # Author: NOFEXtream
 #
 # Dependencies:
@@ -27,7 +27,7 @@
 #     -u  / --update [ver]     - Update multibypass (optionally specify version, e.g. '--update v2025.04.10-0415')
 #     -un / --uninstall        - Uninstall multibypass
 #     -s  / --status           - Basic status (enabled/disabled/error)
-#     -sf / --status-full      - Detailed status (nfqws, iptables, ip rules, ipsets)
+#     -sf / --status-full      - Detailed status (nfqws, iptables, ip rules, ipset)
 #     -ns / --nslookup         - Perform DNS lookups for x3mRouting domains files
 #
 #   Global actions for WireGuard, OpenVPN, and zapret:
@@ -414,7 +414,7 @@ status_detailed() {
   printf "\n========== IP RULES \n\n"
   ip rule | sed 's/^/  /'
 
-  printf "\n========== IPSETS \n\n"
+  printf "\n========== IPSET \n\n"
   ipset list -t | sed 's/^/  /'
   printf "\n Use this command to view specific set:\n ipset list <ipset-name>\n"
 
@@ -451,22 +451,21 @@ x3mRouting() {
 
     for type in domains ips asn; do
       ipset="x3m-$iface-$type"
-      file_path="$SCR_DIR/$ipset.txt"
+      file="$SCR_DIR/$ipset.txt"
 
-      if [ -n "$1" ] && [ ! -f "$file_path" ]; then
+      if [ -n "$1" ] && [ ! -f "$file" ]; then
         if [ "$action" = "disable" ]; then
           log_info "Starting 'x3mRouting' script execution for disabling."
-          log_debug "Disabling '$iface $type' routing."
-          sh "$X3M" ipset_name="$ipset" del
+          sh "$X3M" ipset_name="$ipset" del && rm -f "${file%.*}.tmp"
           log_info "End 'x3mRouting' script execution for '$ipset'."
         else
-          x3m_handle_file_creation "$ipset" "$file_path" "$type"
+          x3m_handle_file_creation "$ipset" "$file" "$type"
         fi
-      elif [ -n "$1" ] && [ "$action" = "enable" ] && ! grep -qE '^[[:space:]]*[^#[:space:]]' "$file_path"; then
-        log_debug "File $file_path is empty. Add $type to it, if you want to use it."
-      elif [ -f "$file_path" ] && grep -qE '^[[:space:]]*[^#[:space:]]' "$file_path"; then
-        tr -d '\n' <"$file_path" | grep -q "$(printf '\r')" && dos2unix "$file_path"
-        x3m_handle_ipset_routing "$ipset" "$file_path" "$iface" "$type" "$action" "$iface_number"
+      elif [ -n "$1" ] && [ "$action" = "enable" ] && ! grep -qE '^[[:space:]]*[^#[:space:]]' "$file"; then
+        log_debug "File $file is empty. Add $type to it, if you want to use it."
+      elif [ -f "$file" ]; then
+        tr -d '\n' <"$file" | grep -q "$(printf '\r')" && dos2unix "$file"
+        x3m_handle_ipset_routing "$ipset" "$file" "$type" "$action" "$iface_number"
       fi
     done
   done
@@ -474,16 +473,16 @@ x3mRouting() {
 
 x3m_handle_file_creation() {
   ipset="$1"
-  file_path="$2"
+  file="$2"
   type="$3"
 
   while true; do
-    echo "Do you want to create the file $file_path? [Y/n]:"
+    echo "Do you want to create the file $file? [Y/n]:"
     read -r option
     case "${option:-y}" in
       [yY][eE][sS] | [yY])
-        printf '# proto=tcp:80,443 udp:443\n' > "$file_path" && chmod 644 "$file_path"
-        log_debug "File $file_path created. Add $type to it, if you want to use it." && return
+        printf '# proto=tcp:80,443 udp:443\n' > "$file" && chmod 644 "$file"
+        log_debug "File $file created. Add $type to it, if you want to use it." && return
         ;;
       [nN][oO] | [nN]) log_debug "File not created. Exiting." && return ;;
       *) echo "Invalid option." && return ;;
@@ -493,39 +492,41 @@ x3m_handle_file_creation() {
 
 x3m_handle_ipset_routing() {
   ipset="$1"
-  file_path="$2"
-  iface="$3"
-  type="$4"
-  action="$5"
-  iface_number="$6"
+  file="$2"
+  type="$3"
+  action="$4"
+  iface_number="$5"
+  tmp_file="${file%.*}.tmp"
 
   log_info "Starting 'x3mRouting' script execution."
   log_debug "Disabling '$ipset $type' routing if exist."
-  sh "$X3M" ipset_name="$ipset" "$([ "$action" = 'uninstall' ] && echo 'del=force' || echo 'del')"
+  sh "$X3M" ipset_name="$ipset" "$([ "$action" = 'uninstall' ] && echo 'del=force' || echo 'del')" && rm -f "$tmp_file"
 
   if [ "$action" = "enable" ]; then
     log_debug "Enabling '$ipset' routing."
 
     # proto from "# proto=..." comment, else default
-    proto="$(grep -m1 -E '^[[:space:]]*#[[:space:]]*proto=' "$file_path" \
-      | sed -E 's/^[[:space:]]*#[[:space:]]*proto=//')"
-    [ -z "$proto" ] && proto='tcp:80,443 udp:443'
+    proto="$(grep -m1 -E '^[[:space:]]*#[[:space:]]*proto=' "$file" | sed -E 's/^[[:space:]]*#[[:space:]]*proto=//')"
+    [ -n "$proto" ] && proto_arg="proto=$proto"
 
     # clean list file for x3mRouting.sh (strip comments/blank lines)
-    clean_file="/tmp/${ipset}.clean.$$"
-    sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$file_path" \
-      | grep -v -E '^[[:space:]]*$' > "$clean_file"
+    sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$file" | grep -v -E '^[[:space:]]*$' > "$tmp_file"
 
-    if [ "$type" = "asn" ]; then
-      asnum="$(tr '\n' ',' < "$clean_file" | sed 's/,$//')"
-      sh "$X3M" 0 "$iface_number" "$ipset" asnum="$asnum" proto="$proto"
+    if [ ! -s "$tmp_file" ]; then
+      log_debug "File $file does not contain any $type entries. Skipping."
+      rm -f "$tmp_file"
     else
-      param_type="$([ "$type" = "domains" ] && echo "dnsmasq_file" || echo "ip_file")"
-      sh "$X3M" 0 "$iface_number" "$ipset" "$param_type"="$clean_file" proto="$proto"
-    fi
+      if [ "$type" = "asn" ]; then
+        asnum="$(tr '\n' ',' < "$tmp_file" | sed 's/,$//')"
+        sh "$X3M" 0 "$iface_number" "$ipset" asnum="$asnum" "$proto_arg"
+        rm -f "$tmp_file"
+      else
+        param_type="$([ "$type" = "domains" ] && echo "dnsmasq_file" || echo "ip_file")"
+        sh "$X3M" 0 "$iface_number" "$ipset" "$param_type"="$tmp_file" "$proto_arg"
+      fi
 
-    sh "$X3M" server=3 ipset_name="$ipset" proto="$proto"
-    rm -f "$clean_file"
+      sh "$X3M" server=3 ipset_name="$ipset" "$proto_arg"
+    fi
   fi
 
   log_info "End 'x3mRouting' script execution."

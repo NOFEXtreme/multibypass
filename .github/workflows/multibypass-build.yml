@@ -46,7 +46,7 @@ jobs:
             repo: 'spvkgn/musl-cross'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
           fetch-depth: 1
@@ -124,7 +124,7 @@ jobs:
           tar -C ${{ env.zapret_dir }}/binaries/my -cJf zapret-linux-$ARCH.tar.xz .
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: zapret-linux-${{ matrix.arch }}
           path: zapret-linux-*.tar.xz
@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout with submodules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           submodules: recursive
@@ -201,14 +201,14 @@ jobs:
           done
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         id: bins
         with:
           path: ${{ env.zapret_dir }}/binaries
           pattern: zapret-linux-*
 
       - name: Install upx
-        uses: crazy-max/ghaction-upx@v3
+        uses: crazy-max/ghaction-upx@v4
         with:
           install-only: true
           version: v4.2.4
