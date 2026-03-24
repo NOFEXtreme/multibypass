@@ -507,7 +507,7 @@ x3m_handle_ipset_routing() {
 
     # proto from "# proto=..." comment, else default
     proto="$(grep -m1 -E '^[[:space:]]*#[[:space:]]*proto=' "$file" | sed -E 's/^[[:space:]]*#[[:space:]]*proto=//')"
-    [ -n "$proto" ] && proto_arg="proto=$proto"
+    proto_arg="" && [ -n "$proto" ] && proto_arg="proto=$proto"
 
     # clean list file for x3mRouting.sh (strip comments/blank lines)
     sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$file" | grep -v -E '^[[:space:]]*$' > "$tmp_file"
