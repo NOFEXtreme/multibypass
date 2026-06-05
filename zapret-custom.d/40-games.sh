@@ -22,9 +22,14 @@
 #       NFQWS_GAMES_ASN="13335,32934"
 #       NFQWS_GAMES_ASN="AS13335,AS32934"
 #
-#     Default points to RIPE Stat announced-prefixes:
-#       NFQWS_GAMES_ASN_URL="https://stat.ripe.net/data/announced-prefixes/data.json?resource="
-#     Fetch URL is formed as: "${NFQWS_GAMES_ASN_URL}AS<NUM>"
+#     ASN are fetched in this order:
+#       1. Custom URL, if `NFQWS_GAMES_ASN_URL` is set
+#       2. RIPEstat RIS Prefixes
+#       3. RouteViews API (ASN endpoint)
+#
+#     Custom fetch URL is formed as: "${NFQWS_GAMES_ASN_URL}AS<NUM>"
+#     Example:
+#       NFQWS_GAMES_ASN_URL="https://asn.ipinfo.app/api/json/list/"
 #
 #     Cache dir:
 #       NFQWS_GAMES_ASN_DIR="/jffs/scripts/multibypass/zapret-asn-lists"
@@ -50,7 +55,7 @@ NFQWS_GAMES_IPSET_OPT="${NFQWS_GAMES_IPSET_OPT:-hash:net hashsize 32768 maxelem 
 NFQWS_GAMES_CIDR="${NFQWS_GAMES_CIDR:-}"
 NFQWS_GAMES_ASN="${NFQWS_GAMES_ASN:-}"
 NFQWS_GAMES_ASN_DIR="${NFQWS_GAMES_ASN_DIR:-/jffs/scripts/multibypass/zapret-asn-lists}"
-NFQWS_GAMES_ASN_URL="${NFQWS_GAMES_ASN_URL:-https://stat.ripe.net/data/announced-prefixes/data.json?resource=}"
+NFQWS_GAMES_ASN_URL="${NFQWS_GAMES_ASN_URL:-}"
 NFQWS_GAMES_OPT="${NFQWS_GAMES_OPT:-
 --filter-udp=$NFQWS_GAMES_PORTS_UDP
 --filter-l7=unknown
@@ -73,7 +78,7 @@ NFQWS_GAMES_IPSET_NAME=zapret-custom-games
 
 games_get_cidr()
 {
-  local a n asn file tmp
+  local a n asn file tmp json fetched custom_url primary_url fallback_url url stats
 
   mkdir -p "$NFQWS_GAMES_ASN_DIR" 2>/dev/null
 
@@ -88,22 +93,59 @@ games_get_cidr()
 
       asn="AS$n"
       file="$NFQWS_GAMES_ASN_DIR/$asn.cidr"
+      tmp="$file.tmp.$$"
+      json="$tmp.json"
 
-      if [ ! -s "$file" ] || [ -n "$(find "$file" -mtime +7 -print 2>/dev/null)" ]; then
-        tmp="$file.tmp.$$"
+      custom_url="${NFQWS_GAMES_ASN_URL}${asn}"
+      primary_url="https://stat.ripe.net/data/ris-prefixes/data.json?resource=$asn&list_prefixes=true&types=o&noise=filter&af=v4"
+      fallback_url="https://api.routeviews.org/asn/${asn#AS}?af=4"
 
-        curl --retry 3 --connect-timeout 3 --speed-limit 1 --speed-time 30 -sSfL \
-          -w "%{stderr}Downloaded ${asn}: %{size_download} bytes in %{time_total}s\n%{stdout}" \
-          "${NFQWS_GAMES_ASN_URL}${asn}" \
-          | grep -oE "$CIDR_REGEX" \
-          | sort -u -t '.' -k1,1n -k2,2n -k3,3n -k4,4n >"$tmp"
+      if [ ! -f "$file" ] || [ -n "$(find "$file" -mtime +7 -print 2>/dev/null)" ]; then
+        fetched=0
 
-        [ -s "$tmp" ] || {
-          echo "NFQWS_CUSTOM_GAMES: fetch/parse failed or empty list for $asn" >&2
+        for url in ${NFQWS_GAMES_ASN_URL:+"$custom_url"} "$primary_url" "$fallback_url"; do
+          echo "NFQWS_CUSTOM_GAMES: fetching data from: $url" >&2
+          rm -f "$tmp" "$json"
+
+          if stats="$(curl --retry 1 --connect-timeout 5 --speed-limit 1 --speed-time 30 -sSfL -o "$json" -w '%{size_download} %{time_total}' "$url")"; then
+            if [ "$url" = "$primary_url" ]; then
+              grep -qE '"status"[[:space:]]*:[[:space:]]*"ok"' "$json" || {
+                echo "NFQWS_CUSTOM_GAMES: primary URL failed, trying fallback URL" >&2
+                continue
+              }
+            elif [ "$url" = "$fallback_url" ]; then
+              grep -qE '^[[:space:]]*\[' "$json" && grep -qE '\][[:space:]]*$' "$json" || continue
+            fi
+
+            grep -oE "$CIDR_REGEX" "$json" | sort -t '.' -k1,1n -k2,2n -k3,3n -k4,4n | uniq >"$tmp"
+
+            if [ "$url" = "$custom_url" ] && [ ! -s "$tmp" ]; then
+              echo "NFQWS_CUSTOM_GAMES: custom URL returned no IPv4 prefixes for $asn, trying RIPEstat" >&2
+              continue
+            fi
+
+            echo "NFQWS_CUSTOM_GAMES: downloaded $asn: ${stats%% *} bytes in ${stats#* }s" >&2
+            [ -s "$tmp" ] || echo "NFQWS_CUSTOM_GAMES: no IPv4 prefixes found for $asn" >&2
+            fetched=1
+            break
+          fi
+
+          if [ "$url" = "$custom_url" ]; then
+            echo "NFQWS_CUSTOM_GAMES: custom URL failed, trying RIPEstat" >&2
+          elif [ "$url" = "$primary_url" ]; then
+            echo "NFQWS_CUSTOM_GAMES: primary URL failed, trying fallback URL" >&2
+          fi
+        done
+
+        rm -f "$json"
+
+        if [ "$fetched" -eq 1 ]; then
+          mv -f "$tmp" "$file"
+        else
           rm -f "$tmp"
-          continue
-        }
-        mv -f "$tmp" "$file"
+          [ -f "$file" ] || { echo "NFQWS_CUSTOM_GAMES: fetching failed and no existing cache for $asn" >&2; continue; }
+          echo "NFQWS_CUSTOM_GAMES: fetching failed, using existing $file" >&2
+        fi
       fi
 
       cat "$file"
@@ -113,95 +155,95 @@ games_get_cidr()
 
 zapret_custom_daemons()
 {
-	# $1 - 1 - run, 0 - stop
+  # $1 - 1 - run, 0 - stop
 
-	local opt="--qnum=$QNUM_NFQWS_GAMES $NFQWS_GAMES_OPT"
-	do_nfqws $1 $DNUM_NFQWS_GAMES "$opt"
+  local opt="--qnum=$QNUM_NFQWS_GAMES $NFQWS_GAMES_OPT"
+  do_nfqws $1 $DNUM_NFQWS_GAMES "$opt"
 }
 
 zapret_custom_firewall()
 {
-	# $1 - 1 - run, 0 - stop
+  # $1 - 1 - run, 0 - stop
 
-	local f4
-	local NFQWS_GAMES_PORTS_TCP=$(replace_char - : $NFQWS_GAMES_PORTS_TCP)
-	local NFQWS_GAMES_PORTS_UDP=$(replace_char - : $NFQWS_GAMES_PORTS_UDP)
+  local f4
+  local NFQWS_GAMES_PORTS_TCP=$(replace_char - : $NFQWS_GAMES_PORTS_TCP)
+  local NFQWS_GAMES_PORTS_UDP=$(replace_char - : $NFQWS_GAMES_PORTS_UDP)
 
-	[ "$1" = 1 -a "$DISABLE_IPV4" != 1 ] && {
-		ipset create $NFQWS_GAMES_IPSET_NAME $NFQWS_GAMES_IPSET_OPT family inet 2>/dev/null
-		ipset flush $NFQWS_GAMES_IPSET_NAME
-		games_get_cidr | sort -u | sed "s|^|add $NFQWS_GAMES_IPSET_NAME |" | ipset -! restore
-	}
+  [ "$1" = 1 -a "$DISABLE_IPV4" != 1 ] && {
+    ipset create $NFQWS_GAMES_IPSET_NAME $NFQWS_GAMES_IPSET_OPT family inet 2>/dev/null
+    ipset flush $NFQWS_GAMES_IPSET_NAME
+    games_get_cidr | sort -u | sed "s|^|add $NFQWS_GAMES_IPSET_NAME |" | ipset -! restore
+  }
 
-	[ -n "$NFQWS_GAMES_PORTS_TCP" ] && {
-		[ -n "$NFQWS_GAMES_TCP_PKT_OUT" -a "$NFQWS_GAMES_TCP_PKT_OUT" != 0 ] && {
-			f4="-p tcp -m multiport --dports $NFQWS_GAMES_PORTS_TCP $ipt_connbytes 1:$NFQWS_GAMES_TCP_PKT_OUT -m set --match-set"
-			f4="$f4 $NFQWS_GAMES_IPSET_NAME dst"
-			fw_nfqws_post $1 "$f4" "" $QNUM_NFQWS_GAMES
-		}
-		[ -n "$NFQWS_GAMES_TCP_PKT_IN" -a "$NFQWS_GAMES_TCP_PKT_IN" != 0 ] && {
-			f4="-p tcp -m multiport --sports $NFQWS_GAMES_PORTS_TCP $ipt_connbytes 1:$NFQWS_GAMES_TCP_PKT_IN -m set --match-set"
-			f4="$f4 $NFQWS_GAMES_IPSET_NAME src"
-			fw_nfqws_pre $1 "$f4" "" $QNUM_NFQWS_GAMES
-		}
-	}
-	[ -n "$NFQWS_GAMES_PORTS_UDP" ] && {
-		[ -n "$NFQWS_GAMES_UDP_PKT_OUT" -a "$NFQWS_GAMES_UDP_PKT_OUT" != 0 ] && {
-			f4="-p udp -m multiport --dports $NFQWS_GAMES_PORTS_UDP $ipt_connbytes 1:$NFQWS_GAMES_UDP_PKT_OUT -m set --match-set"
-			f4="$f4 $NFQWS_GAMES_IPSET_NAME dst"
-			fw_nfqws_post $1 "$f4" "" $QNUM_NFQWS_GAMES
-		}
-		[ -n "$NFQWS_GAMES_UDP_PKT_IN" -a "$NFQWS_GAMES_UDP_PKT_IN" != 0 ] && {
-			f4="-p udp -m multiport --sports $NFQWS_GAMES_PORTS_UDP $ipt_connbytes 1:$NFQWS_GAMES_UDP_PKT_IN -m set --match-set"
-			f4="$f4 $NFQWS_GAMES_IPSET_NAME src"
-			fw_nfqws_pre $1 "$f4" "" $QNUM_NFQWS_GAMES
-		}
-	}
+  [ -n "$NFQWS_GAMES_PORTS_TCP" ] && {
+    [ -n "$NFQWS_GAMES_TCP_PKT_OUT" -a "$NFQWS_GAMES_TCP_PKT_OUT" != 0 ] && {
+      f4="-p tcp -m multiport --dports $NFQWS_GAMES_PORTS_TCP $ipt_connbytes 1:$NFQWS_GAMES_TCP_PKT_OUT -m set --match-set"
+      f4="$f4 $NFQWS_GAMES_IPSET_NAME dst"
+      fw_nfqws_post $1 "$f4" "" $QNUM_NFQWS_GAMES
+    }
+    [ -n "$NFQWS_GAMES_TCP_PKT_IN" -a "$NFQWS_GAMES_TCP_PKT_IN" != 0 ] && {
+      f4="-p tcp -m multiport --sports $NFQWS_GAMES_PORTS_TCP $ipt_connbytes 1:$NFQWS_GAMES_TCP_PKT_IN -m set --match-set"
+      f4="$f4 $NFQWS_GAMES_IPSET_NAME src"
+      fw_nfqws_pre $1 "$f4" "" $QNUM_NFQWS_GAMES
+    }
+  }
+  [ -n "$NFQWS_GAMES_PORTS_UDP" ] && {
+    [ -n "$NFQWS_GAMES_UDP_PKT_OUT" -a "$NFQWS_GAMES_UDP_PKT_OUT" != 0 ] && {
+      f4="-p udp -m multiport --dports $NFQWS_GAMES_PORTS_UDP $ipt_connbytes 1:$NFQWS_GAMES_UDP_PKT_OUT -m set --match-set"
+      f4="$f4 $NFQWS_GAMES_IPSET_NAME dst"
+      fw_nfqws_post $1 "$f4" "" $QNUM_NFQWS_GAMES
+    }
+    [ -n "$NFQWS_GAMES_UDP_PKT_IN" -a "$NFQWS_GAMES_UDP_PKT_IN" != 0 ] && {
+      f4="-p udp -m multiport --sports $NFQWS_GAMES_PORTS_UDP $ipt_connbytes 1:$NFQWS_GAMES_UDP_PKT_IN -m set --match-set"
+      f4="$f4 $NFQWS_GAMES_IPSET_NAME src"
+      fw_nfqws_pre $1 "$f4" "" $QNUM_NFQWS_GAMES
+    }
+  }
 
-	[ "$1" = 1 ] || {
-		ipset destroy $NFQWS_GAMES_IPSET_NAME 2>/dev/null
-	}
+  [ "$1" = 1 ] || {
+    ipset destroy $NFQWS_GAMES_IPSET_NAME 2>/dev/null
+  }
 }
 
 zapret_custom_firewall_nft()
 {
-	local f4
+  local f4
 
-	[ "$DISABLE_IPV4" != 1 ] && {
-		nft_create_set $NFQWS_GAMES_IPSET_NAME "type ipv4_addr; size $NFQWS_GAMES_IPSET_SIZE; auto-merge; flags interval;"
-		nft_flush_set $NFQWS_GAMES_IPSET_NAME
-	  games_get_cidr | sort -u | sed "s|^|add element inet $ZAPRET_NFT_TABLE $NFQWS_GAMES_IPSET_NAME { |; s|$| }|" | nft -f -
-	}
+  [ "$DISABLE_IPV4" != 1 ] && {
+    nft_create_set $NFQWS_GAMES_IPSET_NAME "type ipv4_addr; size $NFQWS_GAMES_IPSET_SIZE; auto-merge; flags interval;"
+    nft_flush_set $NFQWS_GAMES_IPSET_NAME
+    games_get_cidr | sort -u | sed "s|^|add element inet $ZAPRET_NFT_TABLE $NFQWS_GAMES_IPSET_NAME { |; s|$| }|" | nft -f -
+  }
 
-	[ -n "$NFQWS_GAMES_PORTS_TCP" ] && {
-		[ -n "$NFQWS_GAMES_TCP_PKT_OUT" -a "$NFQWS_GAMES_TCP_PKT_OUT" != 0 ] && {
-			f4="tcp dport {$NFQWS_GAMES_PORTS_TCP} $(nft_first_packets $NFQWS_GAMES_TCP_PKT_OUT)"
-			f4="$f4 ip daddr @$NFQWS_GAMES_IPSET_NAME"
-			nft_fw_nfqws_post "$f4" "" $QNUM_NFQWS_GAMES
-		}
-		[ -n "$NFQWS_GAMES_TCP_PKT_IN" -a "$NFQWS_GAMES_TCP_PKT_IN" != 0 ] && {
-			f4="tcp sport {$NFQWS_GAMES_PORTS_TCP} $(nft_first_packets $NFQWS_GAMES_TCP_PKT_IN)"
-			f4="$f4 ip saddr @$NFQWS_GAMES_IPSET_NAME"
-			nft_fw_nfqws_pre "$f4" "" $QNUM_NFQWS_GAMES
-		}
-	}
-	[ -n "$NFQWS_GAMES_PORTS_UDP" ] && {
-		[ -n "$NFQWS_GAMES_UDP_PKT_OUT" -a "$NFQWS_GAMES_UDP_PKT_OUT" != 0 ] && {
-			f4="udp dport {$NFQWS_GAMES_PORTS_UDP} $(nft_first_packets $NFQWS_GAMES_UDP_PKT_OUT)"
-			f4="$f4 ip daddr @$NFQWS_GAMES_IPSET_NAME"
-			nft_fw_nfqws_post "$f4" "" $QNUM_NFQWS_GAMES
-		}
-		[ -n "$NFQWS_GAMES_UDP_PKT_IN" -a "$NFQWS_GAMES_UDP_PKT_IN" != 0 ] && {
-			f4="udp sport {$NFQWS_GAMES_PORTS_UDP} $(nft_first_packets $NFQWS_GAMES_UDP_PKT_IN)"
-			f4="$f4 ip saddr @$NFQWS_GAMES_IPSET_NAME"
-			nft_fw_nfqws_pre "$f4" "" $QNUM_NFQWS_GAMES
-		}
-	}
+  [ -n "$NFQWS_GAMES_PORTS_TCP" ] && {
+    [ -n "$NFQWS_GAMES_TCP_PKT_OUT" -a "$NFQWS_GAMES_TCP_PKT_OUT" != 0 ] && {
+      f4="tcp dport {$NFQWS_GAMES_PORTS_TCP} $(nft_first_packets $NFQWS_GAMES_TCP_PKT_OUT)"
+      f4="$f4 ip daddr @$NFQWS_GAMES_IPSET_NAME"
+      nft_fw_nfqws_post "$f4" "" $QNUM_NFQWS_GAMES
+    }
+    [ -n "$NFQWS_GAMES_TCP_PKT_IN" -a "$NFQWS_GAMES_TCP_PKT_IN" != 0 ] && {
+      f4="tcp sport {$NFQWS_GAMES_PORTS_TCP} $(nft_first_packets $NFQWS_GAMES_TCP_PKT_IN)"
+      f4="$f4 ip saddr @$NFQWS_GAMES_IPSET_NAME"
+      nft_fw_nfqws_pre "$f4" "" $QNUM_NFQWS_GAMES
+    }
+  }
+  [ -n "$NFQWS_GAMES_PORTS_UDP" ] && {
+    [ -n "$NFQWS_GAMES_UDP_PKT_OUT" -a "$NFQWS_GAMES_UDP_PKT_OUT" != 0 ] && {
+      f4="udp dport {$NFQWS_GAMES_PORTS_UDP} $(nft_first_packets $NFQWS_GAMES_UDP_PKT_OUT)"
+      f4="$f4 ip daddr @$NFQWS_GAMES_IPSET_NAME"
+      nft_fw_nfqws_post "$f4" "" $QNUM_NFQWS_GAMES
+    }
+    [ -n "$NFQWS_GAMES_UDP_PKT_IN" -a "$NFQWS_GAMES_UDP_PKT_IN" != 0 ] && {
+      f4="udp sport {$NFQWS_GAMES_PORTS_UDP} $(nft_first_packets $NFQWS_GAMES_UDP_PKT_IN)"
+      f4="$f4 ip saddr @$NFQWS_GAMES_IPSET_NAME"
+      nft_fw_nfqws_pre "$f4" "" $QNUM_NFQWS_GAMES
+    }
+  }
 }
 
 zapret_custom_firewall_nft_flush()
 {
-	# this function is called after all nft fw rules are deleted
-	# however sets are not deleted. it's desired to clear sets here.
-	nft_del_set $NFQWS_GAMES_IPSET_NAME 2>/dev/null
+  # this function is called after all nft fw rules are deleted
+  # however sets are not deleted. it's desired to clear sets here.
+  nft_del_set $NFQWS_GAMES_IPSET_NAME 2>/dev/null
 }

@@ -512,7 +512,7 @@ jobs:
           tar --owner=0 --group=0 -czf "${{ env.repo_dir }}-openwrt-embedded.tar.gz" "${{ env.repo_dir }}"
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           fail_on_unmatched_files: true
           prerelease: false
